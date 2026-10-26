@@ -229,7 +229,7 @@
 
         <div class="mt-3 pt-3 border-t border-slate-800 flex items-start gap-2">
           <img src="https://cdn.jsdelivr.net/npm/lucide-static@1.44.0/icons/star.svg" class="w-3.5 h-3.5 text-amber-400 mt-0.5 shrink-0" alt="">
-          <p id="sigReason" class="text-[12px] text-slate-400 leading-relaxed"></p>
+          <div id="sigBiasChips" class="text-[10px] flex gap-2 mb-2"></div><p id="sigReason" class="text-[12px] text-slate-400 leading-relaxed"></p>
         </div>
       </div>
 
@@ -356,6 +356,7 @@
             </button>
           </div>
         </div>
+        <details class="px-4 text-[10px] text-slate-400"><summary id="feedSummary" class="cursor-pointer">feeds: checking…</summary><div id="feedFailures">Checking sources…</div></details>
         <div id="newsFeed" class="max-h-[420px] overflow-y-auto divide-y divide-slate-800/60"></div>
       </div>
 
@@ -411,7 +412,7 @@
     //  (red-flag 4★+ events with bias matrix for DXY/XAUUSD/NAS100)
     // ================================================================
 
-    const API = '/api';   // same-origin helpers served by _worker.js (calendar, news, COT)
+    const API = '/api';   // same-origin Netlify Functions helpers (calendar, news, COT)
         const ASSETS = [
       { sym:'XAUUSD', name:'Gold / USD',         dp:2, base:4000,  yahoo:'xyz:GOLD',   vol:0 },
       { sym:'NAS100', name:'Nasdaq 100',         dp:2, base:29000, yahoo:'xyz:XYZ100', vol:0 },
@@ -474,16 +475,27 @@
     const GN = q => `https://news.google.com/rss/search?q=${q}+when:1d&hl=en-US&gl=US&ceid=US:en`;
     const NEWS_FB = [['Google · Red folder', GN('(NFP+OR+CPI+OR+PPI+OR+FOMC+OR+payrolls+OR+PCE)')], ['Google · Gold', GN('gold+price')], ['Google · Dollar', GN('dollar+index+OR+Treasury+yields')],
       ['BBC Business', 'https://feeds.bbci.co.uk/news/business/rss.xml'], ['CNBC Markets', 'https://www.cnbc.com/id/10000664/device/rss/rss.html'], ['MarketWatch', 'https://feeds.content.dowjones.io/public/rss/mw_topstories'], ['FXStreet', 'https://www.fxstreet.com/rss/news']];
+    function browserRSS(xml, src) {
+      const doc = new DOMParser().parseFromString(xml, 'text/xml');
+      return [...doc.querySelectorAll('item, entry')].map(x => ({ title:x.querySelector('title')?.textContent || '', src,
+        ts:Date.parse(x.querySelector('pubDate, published, updated')?.textContent || ''),
+        link:x.querySelector('link')?.getAttribute('href') || x.querySelector('link')?.textContent || '' }));
+    }
     async function newsFallback() {
-      const res = await Promise.allSettled(NEWS_FB.map(async ([name, url]) => {
-        const j = await fetchJson('https://api.rss2json.com/v1/api.json?rss_url=' + encodeURIComponent(url), 12000);
-        if (j.status !== 'ok') throw new Error(name);
-        return j.items.slice(0, 10).map(it => { let title = it.title, src = name; const g = title.match(/^(.*) - ([^-]{2,40})$/); if (name.startsWith('Google') && g) { title = g[1]; src = g[2]; }
-          return { title, src, ts: Date.parse(String(it.pubDate).replace(' ', 'T') + 'Z') || Date.now(), link: it.link }; });
-      }));
-      const items = res.filter(x => x.status === 'fulfilled').flatMap(x => x.value).sort((a, b) => b.ts - a.ts);
-      if (!items.length) throw new Error('all backup news feeds failed');
-      return { ok: res.filter(x => x.status === 'fulfilled').length, total: NEWS_FB.length, items, fb: true };
+      const fed='https://www.federalreserve.gov/feeds/press_all.xml';
+      const text = async url => { const r=await fetch(url,{signal:AbortSignal.timeout(5000)}); if(!r.ok) throw new Error('HTTP '+r.status); return r.text(); };
+      const valid = items => items.filter(x=>x.title && Number.isFinite(x.ts) && Date.now()-x.ts<48*3600000 && x.ts<=Date.now()+60000);
+      const direct = await Promise.allSettled([
+        text(fed).then(x=>browserRSS(x,'Federal Reserve')),
+        fetchJson('https://api.gdeltproject.org/api/v2/doc/doc?query=(gold%20OR%20forex%20OR%20inflation)&mode=artlist&format=json&maxrecords=40&timespan=24h',5000).then(j=>(j.articles||[]).map(x=>({title:x.title,src:x.domain,link:x.url,ts:Date.parse(x.seendate.replace(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/, '$1-$2-$3T$4:$5:$6Z'))})))
+      ]);
+      let items=valid(direct.filter(x=>x.status==='fulfilled').flatMap(x=>x.value));
+      if(!items.length) {
+        const backups=await Promise.allSettled(NEWS_FB.slice(0,5).map(async ([name,url])=>browserRSS(await text(PROXIES[0]+encodeURIComponent(url)),name)));
+        items=valid(backups.filter(x=>x.status==='fulfilled').flatMap(x=>x.value));
+      }
+      if(!items.length) throw new Error('Backup feeds unavailable');
+      return {items,fb:true,ok:null,total:null};
     }
     const CAL_KEEP = ['USD','EUR','GBP','JPY','AUD','CAD','CHF','NZD','CNY'];
     const CAL_KEY = /ppi|producer price|pce|ism |retail sales|gdp|powell|fomc|federal funds|fed chair|adp|jolts|jobless|unemployment claims|non-farm|nonfarm|cpi/i;
@@ -520,7 +532,7 @@
       const r0 = j && j.chart && j.chart.result && j.chart.result[0]; if (!r0 || !r0.timestamp) throw new Error('No Yahoo data');
       const q = r0.indicators.quote[0], m = r0.meta;
       const series = r0.timestamp.map((t, i) => ({ t:t * 1000, o:q.open[i] ?? q.close[i], h:q.high[i] ?? q.close[i], l:q.low[i] ?? q.close[i], c:q.close[i] })).filter(s => s.c != null);
-      return { price:m.regularMarketPrice ?? series[series.length - 1].c, prevClose:m.chartPreviousClose ?? series[0].c, open:m.regularMarketOpen ?? series[0].o, high:m.regularMarketDayHigh ?? Math.max(...series.map(s => s.h)), low:m.regularMarketDayLow ?? Math.min(...series.map(s => s.l)), volume:0, series };
+      return { ts:(m.regularMarketTime*1000)||series.at(-1).t, source:'Yahoo proxy · delayed/indicative', delayed:true, price:m.regularMarketPrice ?? series[series.length - 1].c, prevClose:m.chartPreviousClose ?? series[0].c, open:m.regularMarketOpen ?? series[0].o, high:m.regularMarketDayHigh ?? Math.max(...series.map(s => s.h)), low:m.regularMarketDayLow ?? Math.min(...series.map(s => s.l)), volume:0, series };
     }
         async function fetchText(url) {
       const r = await fetch(`${API}/rss?url=` + encodeURIComponent(url));
@@ -554,19 +566,19 @@
         if (!dp) dayCache[key] = { at:Date.now(), d };
         if (!m1.length || !d.length) throw new Error('No data');
         const day = d[d.length - 1], prev = d[d.length - 2] || day;
-        return { price:m1[m1.length - 1].c, prevClose:prev.c, open:day.o, high:day.h, low:day.l, volume:Math.round(day.v || 0), series:m1 };
+        return { ts:m1.at(-1).t, source:'Market candles · indicative', price:m1[m1.length - 1].c, prevClose:prev.c, open:day.o, high:day.h, low:day.l, volume:Math.round(day.v || 0), series:m1 };
       }
       const [iv, n] = ({ '5m':['5m', 600], '15m':['15m', 300], '60m':['1h', 500], '1d':['1d', 180] })[interval] || ['5m', 600];
       const series = await get(iv, n);
       if (!series.length) throw new Error('Empty series');
       const last = series[series.length - 1];
-      return { price:last.c, prevClose:(series[series.length - 2] || last).c, open:series[0].o, high:Math.max(...series.map(s => s.h)), low:Math.min(...series.map(s => s.l)), volume:0, series };
+      return { ts:last.t, source:'Market candles · indicative', price:last.c, prevClose:(series[series.length - 2] || last).c, open:series[0].o, high:Math.max(...series.map(s => s.h)), low:Math.min(...series.map(s => s.l)), volume:0, series };
     }
     async function fetchYahoo(inst, range = '1d', interval = '5m') {   // name kept; inst = Hyperliquid market or Yahoo symbol
       if (isHL(inst)) return viaCandles(inst, (iv, n) => hlCandles(inst, iv, n), interval);
       try {
         const q = await callApi(`/yahoo?sym=${encodeURIComponent(inst)}&range=${range}&interval=${interval}`);
-        if (!q.series || !q.series.length) throw new Error(q.error || 'No data');
+        if (!q.reference && (!q.series || !q.series.length)) throw new Error(q.error || 'No data');
         return q;
       } catch (e) {
         if (BIN[inst]) { try { return await viaCandles(inst, (iv, n) => binCandles(BIN[inst], iv, n), interval); } catch (e2) {} }
@@ -754,11 +766,11 @@
       } else {
         dot.className = 'relative inline-flex rounded-full h-2 w-2 bg-slate-400';
         ping.className = 'absolute inline-flex h-full w-full rounded-full bg-slate-400 opacity-60';
-        txt.textContent = 'FALLBACK · Approx. real levels';
+        txt.textContent = 'DELAYED / UNAVAILABLE';
         txt.className = 'text-[11px] font-semibold text-slate-300';
         pill.className = 'hidden md:flex items-center gap-2 rounded-full border border-slate-600/50 bg-slate-800/60 px-3 py-1';
       }
-      document.getElementById('healthTxt').textContent = mode === 'live' ? `${liveCount}/${ASSETS.length} LIVE` : 'SIM';
+      document.getElementById('healthTxt').textContent = `${liveCount} live · ${ASSETS.filter(a=>state.sources[a.sym]==='DELAYED').length} delayed`;
     }
     function updateClock() {
       const now = new Date();
@@ -797,26 +809,27 @@
       const a = assetOf(sym);
       try {
         const q = await fetchYahoo(a.yahoo, '1d', '1m');
-    q.ts = Date.now();
+    q.ts = q.ts || q.series?.at(-1)?.t || Date.now();
+        q.source = q.source || (isHL(a.yahoo) ? 'Hyperliquid' : 'Market fallback');
         state.quotes[sym] = q;
-        state.sources[sym] = 'LIVE';
+        state.sources[sym] = q.delayed ? 'DELAYED' : 'LIVE';
         return true;
       } catch (e) {
         if (attempt < 1) return refreshQuote(sym, attempt + 1);
-        state.sources[sym] = 'SIM';
-        state.quotes[sym] = state.quotes[sym] || synthQuote(a);
+        state.sources[sym] = 'UNAVAILABLE';
+        if (state.quotes[sym]?.synth) delete state.quotes[sym];
         return false;
       }
     }
     let halfIdx = 0, tickN = 0;
     async function refreshHalf() {
   if (document.hidden) return;
-      tickN++; const half = ASSETS.filter(a => isHL(a.yahoo) || tickN % 4 === 1);
+      tickN++; const half = ASSETS.filter(a => isHL(a.yahoo) || tickN % 20 === 1);
       halfIdx = (halfIdx + 1) % 2;
       const results = await Promise.allSettled(half.map(a => refreshQuote(a.sym)));
       updateHealth();
       half.forEach((a, i) => {
-        if (results[i]?.status === 'fulfilled') {
+        if (results[i]?.status === 'fulfilled' && state.quotes[a.sym]) {
           updateAssetRow(a.sym);
           bumpLiveTick(a.sym, state.quotes[a.sym].price);
         }
@@ -1003,13 +1016,17 @@
     }
     function updateAssetRow(sym) {
       const a = assetOf(sym), q = state.quotes[sym], btn = rowEls[sym];
-      if (!q || !btn) return;
+      if (!btn) return;
+      if(!q) {btn.querySelector(`[data-price="${sym}"]`).textContent='—';return;}
       const p = pct(sym), d = dirClass(p);
       btn.querySelector(`[data-price="${sym}"]`).textContent = fmt(q.price, a.dp);
       const pctEl = btn.querySelector(`[data-pct="${sym}"]`);
       pctEl.textContent = `${p >= 0 ? '+' : ''}${p.toFixed(2)}%`;
       pctEl.className = `text-[10px] font-semibold tabular-nums ${d.txt}`;
       const priceEl = btn.querySelector(`[data-price="${sym}"]`);
+      let provenance=btn.querySelector('[data-provenance]');
+      if(!provenance){provenance=document.createElement('div');provenance.dataset.provenance='1';provenance.className='text-[8px] text-slate-500';priceEl.parentElement.append(provenance);}
+      provenance.textContent=q?.synth?'DEMO':q?`${q.source||'Market feed'} · ${timeAgo(q.ts)}`:'Unavailable';
       if (p > 0.05) priceEl.classList.add('text-emerald-300'); else priceEl.classList.remove('text-emerald-300');
       if (p < -0.05) priceEl.classList.add('text-rose-300'); else priceEl.classList.remove('text-rose-300');
       const dot = btn.querySelector(`[data-dot="${sym}"]`);
@@ -1044,7 +1061,7 @@
       const cd = state.chartCache[key];
       let series = cd && cd.series?.length ? cd.series : null;
       if (!series) { const q = state.quotes[state.selected]; if (q?.series?.length) series = q.series; }
-      if (!series || !series.length) return;
+      if (!series || !series.length) { document.getElementById('mainChart').replaceChildren(); document.getElementById('chartSrc').textContent='Chart unavailable · no verified candles'; return; }
 
       const W = 800, H = 280, PL = 12, PR = 60, PT = 16, PB = 20;
       let min, max;
@@ -1119,7 +1136,7 @@
       document.getElementById('statVol').textContent = (q?.volume || a.vol).toLocaleString('en-US');
       const src = document.getElementById('chartSrc');
       const isLive = state.sources[state.selected] === 'LIVE';
-      src.textContent = isLive ? (q?.ws ? 'WS LIVE' : 'LIVE') : 'SIM';
+      src.textContent = q?.synth ? 'DEMO' : q ? `${q.source || 'Market feed'} · ${timeAgo(q.ts)}` : 'UNAVAILABLE';
       src.className = 'text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ' + (isLive ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30' : 'bg-slate-800 text-slate-400 border border-slate-700');
       document.getElementById('chartUpdated').textContent = 'Updated ' + new Date(q?.ts || Date.now()).toLocaleTimeString('en-ZA', { timeZone:'Africa/Johannesburg', hour12:false }) + ' · ' + state.chartTf;
     }
@@ -1136,7 +1153,7 @@
         if (sym === state.selected) renderChart();
       } catch (e) {
         const base = state.quotes[sym]?.price || a.base;
-        if (!state.chartCache[key]) state.chartCache[key] = { sym, tf, series: synthSeriesFor(tf, base), ts: Date.now() };
+        if (!state.chartCache[key]) state.chartCache[key] = { sym, tf, series: [], ts: Date.now() };
         if (sym === state.selected) renderChart();
       }
     }
@@ -1144,7 +1161,7 @@
       const key = sym + ':' + tf;
       const q = state.quotes[sym];
       if (!state.chartCache[key]) {
-        state.chartCache[key] = { sym, tf, series: q?.series?.length ? q.series : synthSeriesFor(tf, assetOf(sym).base), ts: q?.ts || Date.now() };
+        state.chartCache[key] = { sym, tf, series: q?.synth ? [] : q?.series || [], ts: q?.ts || Date.now() };
       }
       renderChart();
       loadChartData(sym, tf);
@@ -1192,7 +1209,7 @@
             <span class="w-9 text-[12px] font-extrabold text-slate-200">${a.sym}</span>
             <div class="flex-1">
               <div class="flex items-center justify-between mb-1">
-                <span class="text-[11px] font-semibold ${m.color}">${m.label}</span>
+                <span class="text-[11px] font-semibold ${m.color}">${m.label} <small class="text-sky-300">N ${newsBias(a.sym).score>=0?'▲':'▼'} ${newsBias(a.sym).score}</small></span>
                 <span class="text-[11px] font-bold text-slate-300 tabular-nums">${s.score > 0 ? '+' : ''}${s.score}</span>
               </div>
               <div class="relative h-1.5 rounded-full bg-slate-800 overflow-hidden">
@@ -1209,7 +1226,8 @@
     }
     function renderSignalDetail() {
       try { renderInterp(); renderCurrency(); } catch (e) {}
-      const s = SIGNAL_CFG[state.selected], m = signalMeta(s.score), a = assetOf(state.selected);
+      const tech=SIGNAL_CFG[state.selected], nb=newsBias(state.selected), combined=Math.round(.6*tech.score+.4*nb.score);
+      const s={...tech,score:combined}, m=signalMeta(combined), a=assetOf(state.selected);
       document.getElementById('sigSym').textContent = a.sym;
       const badge = document.getElementById('sigBadge');
       badge.textContent = m.label;
@@ -1226,7 +1244,10 @@
         const tone = i === 1 ? 'text-rose-300' : i === 2 ? 'text-emerald-300' : 'text-slate-200';
         return `<div class="flex items-center justify-between"><span class="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">${label}</span><span class="font-bold ${tone} tabular-nums">${p}</span></div>`;
       }).join('');
-      document.getElementById('sigReason').textContent = s.reason;
+      const describe=x=>x>14?'Bullish':x<-14?'Bearish':'Neutral';
+      document.getElementById('sigBiasChips').innerHTML=[['News',nb.score],['Technical',tech.score]].map(([label,v])=>`<span class="rounded border border-slate-700 bg-slate-800 px-2 py-1">${label} ${v>=0?'▲':'▼'} ${v}</span>`).join('');
+      const drivers=nb.top.slice(0,3).map(x=>`${x.m>0?'▲':x.m<0?'▼':'•'} ${x.it.title} (${x.it.src}, ${timeAgo(x.it.ts)})`).join('; ');
+      document.getElementById('sigReason').textContent=`NEWS: ${describe(nb.score)} (${nb.score}): ${drivers || 'No relevant headlines in the last 8h'}. TECHNICAL: ${describe(tech.score)} (${tech.score}): ${tech.reason} COMBINED: ${describe(combined)} (${combined}); 60% technical / 40% news.${nb.score*tech.score<0?' News and technical disagree.':''} Entry / stop / target above use the technical setup.`;
     }
 
     // ---------------------------------------------------------------
@@ -1339,29 +1360,57 @@
       while (feed.children.length > 50) feed.lastChild.remove();
     }
     state.newsItems = [];
-    async function refreshNews() {
-      if (document.hidden && state.newsItems.length) return;
-      state.lastNewsAt = Date.now();
-      const ageEl = document.getElementById('newsAge'), feed = document.getElementById('newsFeed');
-      try {
-        let j; try { j = await callApi('/news', 20000); } catch (e) { if (state.newsItems.length && Date.now() - (state.fbNewsAt || 0) < 60000) return; state.fbNewsAt = Date.now(); j = await newsFallback(); }
-        for (const it of [...j.items].reverse()) {
-          const key = it.title.toLowerCase().replace(/\s+/g, ' ');
-          if (seenTitles.has(key)) continue;
-          seenTitles.add(key); if (seenTitles.size > 800) seenTitles.delete(seenTitles.values().next().value);
-          const item = { title: it.title, src: it.src, ts: it.ts, link: it.link, ...classifyNews(it.title) };
-          state.newsItems.push(item); addNewsItem({ ...item, age: timeAgo(it.ts) });
-        }
-        if (state.newsItems.length > 400) state.newsItems.splice(0, state.newsItems.length - 400);
-        if (ageEl) { ageEl.textContent = `${j.ok}/${j.total} feeds${j.fb ? ' (backup)' : ''} · ${new Date().toLocaleTimeString('en-ZA', { timeZone:'Africa/Johannesburg', hour12:false })}`; ageEl.className = 'text-[9px] text-emerald-400 font-bold'; }
-        newsLive = true;
-        document.getElementById('newsLiveDot').innerHTML = '<span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-60"></span><span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-400"></span>';
-      } catch (e) {
-        if (ageEl) { ageEl.textContent = 'OFFLINE · ' + String(e.message || e).slice(0, 40); ageEl.className = 'text-[9px] text-rose-400 font-bold'; }
-        if (feed && !state.newsItems.length) feed.innerHTML = '<div class="p-4 text-[11px] text-rose-300">News feed unavailable. It needs the site to be deployed with _worker.js (Cloudflare Pages), not opened as a local file. Retrying every 20s.</div>';
-      }
+    let newsUpdatedAt = 0, newsBusy = false;
+    const sastTime = ts => new Date(ts).toLocaleTimeString('en-ZA',{timeZone:'Africa/Johannesburg',hour:'2-digit',minute:'2-digit',hour12:false})+' SAST';
+    function drawNews() {
+      const feed=document.getElementById('newsFeed'); feed.replaceChildren();
+      const items=state.newsItems.sort((a,b)=>b.ts-a.ts);
+      for(const item of items.slice(0,50).reverse()) addNewsItem({...item,...classifyNews(item.title),age:timeAgo(item.ts)});
+      if(!items.length) feed.innerHTML='<div class="p-4 text-[11px] text-amber-300">Connecting to news sources. No verified headlines are available yet. Retrying every 20s.</div>';
     }
-    
+    try {
+      const saved=JSON.parse(localStorage.getItem('newssignal.news.v2')||'null');
+      if(saved?.items) { state.newsItems=saved.items.filter(x=>typeof x.title==='string' && Number.isFinite(x.ts) && Date.now()-x.ts<48*3600000); newsUpdatedAt=saved.at||0; }
+    }catch(_){}
+    drawNews();
+    if(newsUpdatedAt) document.getElementById('newsAge').textContent='CACHED · last updated '+sastTime(newsUpdatedAt);
+    async function refreshNews() {
+      if(document.hidden || newsBusy) return;
+      newsBusy=true;
+      const ageEl=document.getElementById('newsAge');
+      try {
+        let j;
+        try { j=await callApi('/news',8000); if(!j.items?.length) throw new Error('No fresh headlines'); }
+        catch(_) { j=await newsFallback(); }
+        const unique=new Map();
+        for(const it of [...j.items,...state.newsItems]) {
+          if(typeof it.title!=='string' || !Number.isFinite(it.ts) || it.ts>Date.now()+60000 || Date.now()-it.ts>48*3600000) continue;
+          const key=it.title.toLowerCase().replace(/[^\p{L}\p{N}]/gu,'');
+          if(!unique.has(key)) unique.set(key,{...it,...classifyNews(it.title)});
+        }
+        state.newsItems=[...unique.values()].sort((a,b)=>b.ts-a.ts).slice(0,150);
+        if(!state.newsItems.length) throw new Error('No recent verified headlines');
+        newsUpdatedAt=Date.now(); newsLive=true;
+        try{localStorage.setItem('newssignal.news.v2',JSON.stringify({at:newsUpdatedAt,items:state.newsItems}));}catch(_){}
+        drawNews();
+        ageEl.textContent=`LIVE${j.fb?' · BACKUP':''} · newest ${sastTime(state.newsItems[0].ts)}`;
+        ageEl.className='text-[9px] text-emerald-400 font-bold';
+        document.getElementById('feedSummary').textContent=j.fb?'feeds: browser backup':`feeds: ${j.ok}/${j.total} ok`;
+        document.getElementById('feedFailures').textContent=j.fb?'Primary API unavailable; direct feeds or public proxy active.':(j.sources||[]).filter(x=>!x.ok).map(x=>`${x.name}: ${x.error} · HTTP ${x.status??'—'} · ${x.ms}ms`).join(' | ')||'All sources responding. Full diagnostics: /api/health';
+        document.getElementById('newsLiveDot').innerHTML='<span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-400"></span>';
+      }catch(e){
+        newsLive=false;
+        state.newsItems=state.newsItems.filter(x=>Date.now()-x.ts<48*3600000);
+        drawNews();
+        ageEl.textContent=newsUpdatedAt?'CACHED · last updated '+sastTime(newsUpdatedAt):'RETRYING · no verified news yet';
+        ageEl.className='text-[9px] text-amber-400 font-bold';
+        document.getElementById('newsLiveDot').innerHTML='<span class="relative inline-flex rounded-full h-2 w-2 bg-amber-400"></span>';
+        document.getElementById('feedSummary').textContent='feeds: unavailable · retrying';
+        document.getElementById('feedFailures').textContent=String(e.message)+' · Inspect /api/health';
+      }finally{newsBusy=false;renderSignalBoard();renderSignalDetail();}
+    }
+    document.addEventListener('visibilitychange',()=>{if(!document.hidden) refreshNews();});
+
     function timeAgo(ts) {
       const s = Math.floor((Date.now() - ts) / 1000);
       if (s < 5) return 'just now';
@@ -1531,10 +1580,10 @@ function renderCot() {
 }
 // ---------------- News bias, currency strength, interpretation ----------------
 const LEX = [
-  { re:/hawkish|rate hike|raises? rates|higher for longer|inflation (rises|accelerates|jumps|surges)|hot(ter)? inflation|strong(er)? (than expected )?(jobs|payrolls|data)|beats? (forecasts?|expectations)|yields? (rise|jump|surge|climb)/, m:{ DXY:1, XAUUSD:-1, NAS100:-1, EURUSD:-1, GBPUSD:-1, AUDUSD:-1, USDJPY:1 } },
-  { re:/dovish|rate cuts?|cuts? rates|inflation (eases|cools|slows|falls)|cooler inflation|weak(er)? (than expected )?(jobs|payrolls|data)|misses? (forecasts?|expectations)|yields? (fall|drop|slide|tumble)/, m:{ DXY:-1, XAUUSD:1, NAS100:1, EURUSD:1, GBPUSD:1, AUDUSD:1, USDJPY:-1 } },
+  { re:/hawkish|rate hike|raises? rates|higher for longer|inflation (rises|accelerates|jumps|surges)|hot(ter)? inflation|inflation.*(above|higher than) (forecast|expected)|(?:cpi|ppi).*(?:hot|above expectations)|strong(er)? (than expected )?(jobs|payrolls|data)|(?:jobs|payrolls|inflation|cpi|ppi).*beats? (forecasts?|expectations)|yields? (rise|jump|surge|climb)/, m:{ DXY:1, XAUUSD:-1, NAS100:-1, EURUSD:-1, GBPUSD:-1, AUDUSD:-1, USDJPY:1 } },
+  { re:/dovish|rate cuts?|cuts? rates|inflation (eases|cools|slows|falls)|cooler inflation|inflation.*(?:below|lower than) (?:forecast|expected)|(?:cpi|ppi).*(?:cool|below expectations)|weak(er)? (than expected )?(jobs|payrolls|data)|(?:jobs|payrolls|inflation|cpi|ppi).*misses? (forecasts?|expectations)|yields? (fall|drop|slide|tumble)/, m:{ DXY:-1, XAUUSD:1, NAS100:1, EURUSD:1, GBPUSD:1, AUDUSD:1, USDJPY:-1 } },
   { re:/sell-?off|plunge|tumble|crash|recession|\bwar\b|escalat|tariff|panic|turmoil|haven/, m:{ XAUUSD:1, NAS100:-1, AUDUSD:-1, DXY:.5, USDJPY:-.5 } },
-  { re:/rall(y|ies)|record high|surge|soar|optimis|stimulus|ceasefire|trade deal|risk[- ]on/, m:{ NAS100:1, AUDUSD:1, DXY:-.5, USDJPY:.5 } },
+  { re:/(?:stocks?|nasdaq|equities|wall street).*(?:rall|record high|surge|soar)|optimis|stimulus|ceasefire|trade deal|risk[- ]on/, m:{ NAS100:1, AUDUSD:1, DXY:-.5, USDJPY:.5 } },
   { re:/gold (rises?|gains?|climbs?|jumps?|rall|hits? (a )?record)/, m:{ XAUUSD:1 } },
   { re:/gold (falls?|slips?|drops?|slides?|declines?|tumbles?)/, m:{ XAUUSD:-1 } },
   { re:/(dollar|greenback|dxy) (rises?|gains?|strengthens?|climbs?|firms?)/, m:{ DXY:1, XAUUSD:-.5, EURUSD:-1, GBPUSD:-1, AUDUSD:-1, USDJPY:1 } },
@@ -1542,12 +1591,36 @@ const LEX = [
   { re:/china.*(stimulus|boost|rebound|beats?)/, m:{ AUDUSD:1 } },
   { re:/china.*(slowdown|weak|misses?|deflation)/, m:{ AUDUSD:-1 } },
 ];
-function headlineMap(title) { const t = title.toLowerCase(), out = {}; for (const l of LEX) if (l.re.test(t)) for (const [k, v] of Object.entries(l.m)) out[k] = (out[k] || 0) + v; return out; }
+function headlineMap(title) {
+  const t=title.toLowerCase(), out={};
+  // Rate language belongs to the named central bank; US policy drives the dollar basket.
+  const bank=/\b(ecb|boe|rba|boj)\b|bank of (england|japan)|reserve bank of australia|european central bank/.exec(t);
+  const hawk=/hawkish|hikes?|raises? rates|higher for longer/.test(t), dove=/dovish|rate cuts?|cuts? rates/.test(t);
+  if(bank && (hawk||dove)) {
+    const sym=/ecb|european/.test(bank[0])?'EURUSD':/boe|england/.test(bank[0])?'GBPUSD':/rba|australia/.test(bank[0])?'AUDUSD':'USDJPY';
+    out[sym]=(hawk?1:-1)*(sym==='USDJPY'?-1:1);
+    return out;
+  }
+  for(const l of LEX) if(l.re.test(t)) for(const [k,v] of Object.entries(l.m)) out[k]=(out[k]||0)+v;
+  // Expected releases alone do not establish a directional surprise.
+  if(/ahead of|awaits?|preview|due today|on tap/.test(t) && !/rises|falls|firms|weakens|surges|slides/.test(t)) return {};
+  if(/risk[- ]off|safe[- ]haven/.test(t)) {out.XAUUSD=(out.XAUUSD||0)+1;out.NAS100=(out.NAS100||0)-1;out.AUDUSD=(out.AUDUSD||0)-1;out.USDJPY=(out.USDJPY||0)-1;}
+  if(/intervention|yen.*strengthen/.test(t)) out.USDJPY=(out.USDJPY||0)-1;
+  return out;
+}
+function itemMap(it) {
+  const out=headlineMap(it.title);
+  const t=it.title.toLowerCase(), macro=/\b(fomc|fed|federal reserve|nfp|nonfarm|payrolls|cpi|ppi|pce|treasury|yields)\b/.test(t);
+  for(const [sym,words] of Object.entries(KW_ASSETS)) if(out[sym]===undefined && (macro||words.some(w=>t.includes(w)))) out[sym]=0;
+  const symbols={FOREX: null, 'FOREX:USD':'DXY','FOREX:EUR':'EURUSD','FOREX:GBP':'GBPUSD','FOREX:AUD':'AUDUSD','FOREX:JPY':'USDJPY',GOLD:'XAUUSD',QQQ:'NAS100'};
+  for(const x of it.tickers||[]) { const sym=symbols[x.ticker],v=Number(x.ticker_sentiment_score),rel=Number(x.relevance_score); if(sym && Number.isFinite(v)&&rel>.1) out[sym]=Math.max(-1,Math.min(1,v*2))*(x.ticker==='FOREX:JPY'?-1:1); }
+  return out;
+}
 function newsBias(sym) {
   const now = Date.now(); let s = 0, w = 0; const top = [];
-  for (const it of state.newsItems || []) { const age = (now - it.ts) / 3.6e6; if (age > 8) continue; const m = headlineMap(it.title)[sym]; if (!m) continue;
-    const wt = (it.imp || 2) * Math.exp(-age / 4); s += m * wt; w += wt; top.push({ it, m }); }
-  return { score: w ? Math.round(Math.max(-1, Math.min(1, s / w)) * Math.min(1, w / 8) * 100) : 0, n: top.length, top: top.sort((a, b) => b.it.ts - a.it.ts).slice(0, 3) };
+  for (const it of state.newsItems || []) { const age = (now - it.ts) / 3.6e6; if (age > 8) continue; const m = itemMap(it)[sym]; if (m === undefined) continue;
+    const wt = (it.imp || classifyNews(it.title).imp) * (/Federal Reserve|ECB|BLS|CNBC|Reuters|Bloomberg/i.test(it.src)?1.4:1) * Math.exp(-Math.max(0,age) / 8); s += m * wt; w += wt; top.push({ it, m, wt }); }
+  return { score: w ? Math.round(Math.max(-1, Math.min(1, s / w)) * Math.min(1, w / 8) * 100) : 0, n: top.length, top: top.sort((a, b) => Math.abs(b.m*b.wt)-Math.abs(a.m*a.wt)).slice(0, 5) };
 }
 const CUR = [{ c:'USD', sym:'DXY', sign:1 }, { c:'EUR', sym:'EURUSD', sign:1 }, { c:'GBP', sym:'GBPUSD', sign:1 }, { c:'JPY', sym:'USDJPY', sign:-1 }, { c:'AUD', sym:'AUDUSD', sign:1 }];
 const CUR_DRIVER = { USD:'US yields, Fed expectations and red-folder US data', EUR:'ECB policy, eurozone inflation and PMIs', GBP:'BoE policy, UK CPI and jobs data', JPY:'BoJ policy and risk sentiment (the yen rises in risk-off)', AUD:'China data, commodities, RBA policy and global risk appetite' };
@@ -1585,9 +1658,7 @@ const PLAYBOOK = {
 function fmtDur(ms) { const h = Math.floor(ms / 3.6e6), m = Math.floor(ms % 3.6e6 / 6e4); return h >= 24 ? `${Math.floor(h / 24)}d ${h % 24}h` : `${h}h ${m}m`; }
 function renderInterp() {
   const sym = state.selected, a = assetOf(sym); if (!a || !document.getElementById('interpBias')) return;
-  const sc = SIGNAL_CFG[sym] || { score:0 }, nb = newsBias(sym), parts = [{ n:'Technical', w:.40, x:sc.score / 100, v:(sc.score > 0 ? '+' : '') + sc.score }, { n:'News bias', w:.25, x:nb.score / 100, v:(nb.score > 0 ? '+' : '') + nb.score + ` (${nb.n} headlines)` }];
-  if (sym !== 'DXY' && state.quotes.DXY) { const dp = pct('DXY'), x = Math.max(-1, Math.min(1, (sym === 'USDJPY' ? 1 : -1) * dp / .5)); parts.push({ n:'Dollar', w:.20, x, v:`DXY ${dp >= 0 ? '+' : ''}${dp.toFixed(2)}%` }); }
-  const ct = state.cot && state.cot[sym]; if (ct) parts.push({ n:'COT', w:.15, x:ct.x, v:ct.outlook ? ct.outlook.label : '—' });
+  const sc = SIGNAL_CFG[sym] || { score:0 }, nb = newsBias(sym), parts = [{ n:'Technical', w:.60, x:sc.score / 100, v:(sc.score > 0 ? '+' : '') + sc.score }, { n:'News bias', w:.40, x:nb.score / 100, v:(nb.score > 0 ? '+' : '') + nb.score + ` (${nb.n} headlines)` }];
   const W = parts.reduce((s, p) => s + p.w, 0), comp = Math.round(100 * parts.reduce((s, p) => s + p.w * p.x, 0) / W);
   const lab = comp >= 35 ? ['Bullish', 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/40'] : comp >= 15 ? ['Mildly bullish', 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30'] : comp <= -35 ? ['Bearish', 'bg-rose-500/15 text-rose-300 border border-rose-500/40'] : comp <= -15 ? ['Mildly bearish', 'bg-rose-500/10 text-rose-400 border border-rose-500/30'] : ['Neutral', 'bg-slate-500/10 text-slate-300 border border-slate-600/40'];
   document.getElementById('interpSym').textContent = sym;
@@ -1600,7 +1671,7 @@ function renderInterp() {
   const cr = CUR.find(x => x.sym === sym); if (cr) { const s = curStrength(cr.c); look.push(`<b>${cr.c} strength:</b> ${s.label.toLowerCase()} (${s.score > 0 ? '+' : ''}${s.score}). ${esc(curLook(s))}`); }
   look.push(...PLAYBOOK[sym].map(esc));
   document.getElementById('interpLook').innerHTML = look.map(t => `<li>${t}</li>`).join('');
-  document.getElementById('interpNews').innerHTML = nb.top.length ? nb.top.map(({ it, m }) => `<li><span class="${m > 0 ? 'text-emerald-300' : 'text-rose-300'} font-bold">${m > 0 ? '▲' : '▼'}</span> ${esc(it.title)} <span class="text-slate-600">· ${esc(it.src)}</span></li>`).join('') : '<li>No recent headlines clearly moving this market (keyword-based read of the last 8 hours).</li>';
+  document.getElementById('interpNews').innerHTML = nb.top.length ? nb.top.map(({ it, m }) => `<li><span class="${m > 0 ? 'text-emerald-300' : 'text-rose-300'} font-bold">${m > 0 ? '▲' : m < 0 ? '▼' : '•'}</span> ${esc(it.title)} <span class="text-slate-600">· ${esc(it.src)}</span></li>`).join('') : '<li>No relevant headlines in the last 8h</li>';
 }
 function showTab(t) {
   document.getElementById('dashMain').classList.toggle('hidden', t !== 'dash'); document.getElementById('cotMain').classList.toggle('hidden', t !== 'cot');
@@ -1696,7 +1767,7 @@ function computeSignal(sym, series) {
   const a = assetOf(sym), th = Math.tanh, cl = series.map(s => s.c), L = cl.length - 1, price = cl[L];
   const e20 = emaArr(cl, 20), e50 = emaArr(cl, 50), m12 = emaArr(cl, 12), m26 = emaArr(cl, 26);
   const macd = m12.map((v, i) => v - m26[i]), sg = emaArr(macd, 9), hist = macd[L] - sg[L];
-  const atr = atr14(series), rsi = rsi14(cl), tr = state.trends[sym], live = tr && tr.live;
+  const atr = Math.max(price * 1e-8, atr14(series)), rsi = rsi14(cl), tr = state.trends[sym], live = tr && tr.live;
   const comps = [
     { w:.25, x: th((e20[L] - e50[L]) / atr) },
     { w:.20, x: th(hist / atr * 4) },
@@ -1731,8 +1802,8 @@ async function refreshSignals() {
 
 
     ASSETS.forEach(a => {
-      state.quotes[a.sym] = synthQuote(a);
-      state.sources[a.sym] = 'SIM';
+      state.quotes[a.sym] = null;
+      state.sources[a.sym] = 'CONNECTING';
       const daily = synthDailySeries(a), weekly = weeklySeries(daily);
       const last = daily[daily.length - 1].c;
       state.trends[a.sym] = { daily: makeTrend(daily.map(s => s.c), last), weekly: makeTrend(weekly.map(w => w.c), weekly.length ? weekly[weekly.length - 1].c : last), weekCount: weekly.length, live: false };
@@ -1754,7 +1825,7 @@ async function refreshSignals() {
       ensureChartData(state.selected, state.chartTf);
     });
 
-    setInterval(updateClock, 1000);
+    setInterval(() => {updateClock();ASSETS.forEach(a=>updateAssetRow(a.sym));}, 1000);
     setInterval(refreshHalf, 3000);
     setInterval(refreshAllTrends, 120000);
     setInterval(refreshNews, 20000);
@@ -1765,7 +1836,7 @@ async function refreshSignals() {
     showTab('dash'); loadCalendar(); setInterval(loadCalendar, 60000); loadCot(); setInterval(loadCot, 6 * 3600000);
     setInterval(renderEventCountdown, 1000);
     setInterval(() => {
-      if (state.chartTf !== '1D' && state.selected) ensureChartData(state.selected, state.chartTf);
+      if (!document.hidden && state.chartTf !== '1D' && state.selected) ensureChartData(state.selected, state.chartTf);
     }, 45000);
   </script>
 </body>
