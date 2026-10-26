@@ -1839,5 +1839,286 @@ async function refreshSignals() {
       if (!document.hidden && state.chartTf !== '1D' && state.selected) ensureChartData(state.selected, state.chartTf);
     }, 45000);
   </script>
+
+<!-- NewsSignal email/password authentication -->
+<style>
+  #ns-auth-screen {
+    position: fixed;
+    inset: 0;
+    z-index: 999999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    background: #080d18;
+    color: #f8fafc;
+    font-family: Arial, sans-serif;
+  }
+  #ns-auth-card {
+    width: 100%;
+    max-width: 400px;
+    padding: 28px;
+    background: #111827;
+    border: 1px solid #334155;
+    border-radius: 18px;
+    box-sizing: border-box;
+  }
+  #ns-auth-card h2 { margin: 0 0 8px; font-size: 26px; }
+  #ns-auth-card p { color: #94a3b8; line-height: 1.5; }
+  #ns-auth-card input {
+    width: 100%;
+    box-sizing: border-box;
+    margin: 7px 0;
+    padding: 13px;
+    border: 1px solid #475569;
+    border-radius: 8px;
+    background: #0b1220;
+    color: white;
+    font-size: 16px;
+  }
+  #ns-auth-card button {
+    width: 100%;
+    margin-top: 10px;
+    padding: 13px;
+    border: 0;
+    border-radius: 8px;
+    background: #38bdf8;
+    color: #082f49;
+    font-size: 15px;
+    font-weight: bold;
+    cursor: pointer;
+  }
+  #ns-auth-card button.secondary {
+    background: #263449;
+    color: white;
+  }
+  #ns-auth-message { overflow-wrap: anywhere; font-size: 14px; }
+  #ns-logout {
+    position: fixed;
+    z-index: 999998;
+    top: 10px;
+    right: 10px;
+    padding: 9px 13px;
+    border: 1px solid #475569;
+    border-radius: 8px;
+    background: #111827;
+    color: white;
+    cursor: pointer;
+  }
+</style>
+
+<div id="ns-auth-screen">
+  <div id="ns-auth-card">
+    <h2>NewsSignal</h2>
+    <p id="ns-auth-description">Sign in to access your trading dashboard.</p>
+
+    <form id="ns-auth-form">
+      <input id="ns-auth-email" type="email"
+        placeholder="Email address" autocomplete="email" required>
+      <input id="ns-auth-password" type="password"
+        placeholder="Password" autocomplete="current-password"
+        minlength="6" required>
+      <button id="ns-auth-submit" type="submit">Sign in</button>
+    </form>
+
+    <button id="ns-auth-signup" class="secondary" type="button">
+      Create an account
+    </button>
+    <button id="ns-auth-reset" class="secondary" type="button">
+      Reset password
+    </button>
+    <button id="ns-auth-update" type="button" style="display:none">
+      Save new password
+    </button>
+    <p id="ns-auth-message" role="status"></p>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script>
+(async function () {
+  const PROJECT_URL = 'https://ykvffybhnnheoqprvbrb.supabase.co';
+  const PUBLISHABLE_KEY = 'sb_publishable_O85WcgO9S4sAqPAfb0kLVQ_mUkUp5ys';
+
+  const screen = document.getElementById('ns-auth-screen');
+  const form = document.getElementById('ns-auth-form');
+  const email = document.getElementById('ns-auth-email');
+  const password = document.getElementById('ns-auth-password');
+  const submit = document.getElementById('ns-auth-submit');
+  const signup = document.getElementById('ns-auth-signup');
+  const reset = document.getElementById('ns-auth-reset');
+  const update = document.getElementById('ns-auth-update');
+  const message = document.getElementById('ns-auth-message');
+  const description = document.getElementById('ns-auth-description');
+
+  let mode = 'login';
+  let recoveryMode = false;
+  let client;
+
+  function say(text) {
+    message.textContent = text;
+  }
+
+  function setMode(nextMode) {
+    mode = nextMode;
+    recoveryMode = false;
+    password.style.display = 'block';
+    password.required = true;
+    password.autocomplete = nextMode === 'signup'
+      ? 'new-password' : 'current-password';
+    submit.style.display = 'block';
+    signup.style.display = 'block';
+    reset.style.display = 'block';
+    update.style.display = 'none';
+
+    if (nextMode === 'signup') {
+      submit.textContent = 'Create account';
+      description.textContent = 'Create your NewsSignal account.';
+    } else {
+      submit.textContent = 'Sign in';
+      description.textContent = 'Sign in to access your trading dashboard.';
+    }
+    say('');
+  }
+
+  function showDashboard(session) {
+    if (!session) {
+      screen.style.display = 'flex';
+      const logout = document.getElementById('ns-logout');
+      if (logout) logout.remove();
+      return;
+    }
+
+    screen.style.display = 'none';
+    let logout = document.getElementById('ns-logout');
+    if (!logout) {
+      logout = document.createElement('button');
+      logout.id = 'ns-logout';
+      logout.textContent = 'Sign out';
+      document.body.appendChild(logout);
+      logout.addEventListener('click', async function () {
+        const result = await client.auth.signOut();
+        if (result.error) alert(result.error.message);
+      });
+    }
+  }
+
+  try {
+    if (!window.supabase) {
+      throw new Error('Could not load the authentication library. Check your connection.');
+    }
+
+    client = window.supabase.createClient(PROJECT_URL, PUBLISHABLE_KEY);
+
+    const { data, error } = await client.auth.getSession();
+    if (error) throw error;
+    showDashboard(data.session);
+
+    client.auth.onAuthStateChange(function (event, session) {
+      if (event === 'PASSWORD_RECOVERY') {
+        recoveryMode = true;
+        mode = 'recovery';
+        screen.style.display = 'flex';
+        description.textContent = 'Choose a new password.';
+        password.value = '';
+        password.placeholder = 'New password (at least 6 characters)';
+        password.autocomplete = 'new-password';
+        submit.style.display = 'none';
+        signup.style.display = 'none';
+        reset.style.display = 'none';
+        update.style.display = 'block';
+        say('');
+        return;
+      }
+      if (!recoveryMode) showDashboard(session);
+    });
+
+    form.addEventListener('submit', async function (event) {
+      event.preventDefault();
+      say('Please wait...');
+      submit.disabled = true;
+
+      try {
+        let result;
+        if (mode === 'signup') {
+          result = await client.auth.signUp({
+            email: email.value.trim(),
+            password: password.value,
+            options: {
+              emailRedirectTo: window.location.origin
+            }
+          });
+          if (!result.error && !result.data.session) {
+            say('Account created. Check your email to confirm your account before signing in.');
+          } else if (!result.error) {
+            say('Account created successfully.');
+          }
+        } else {
+          result = await client.auth.signInWithPassword({
+            email: email.value.trim(),
+            password: password.value
+          });
+          if (!result.error) say('Signed in successfully.');
+        }
+        if (result.error) throw result.error;
+      } catch (error) {
+        say(error.message || 'Something went wrong. Please try again.');
+      } finally {
+        submit.disabled = false;
+      }
+    });
+
+    signup.addEventListener('click', function () {
+      if (mode === 'signup') {
+        setMode('login');
+        signup.textContent = 'Create an account';
+      } else {
+        setMode('signup');
+        signup.textContent = 'Back to sign in';
+      }
+    });
+
+    reset.addEventListener('click', async function () {
+      if (!email.value.trim()) {
+        say('Enter your email address first.');
+        email.focus();
+        return;
+      }
+      say('Sending password reset email...');
+      const { error } = await client.auth.resetPasswordForEmail(
+        email.value.trim(),
+        { redirectTo: window.location.origin }
+      );
+      say(error ? error.message :
+        'If an account exists for this email, a password reset link will be sent.');
+    });
+
+    update.addEventListener('click', async function () {
+      if (password.value.length < 6) {
+        say('Use a password with at least 6 characters.');
+        return;
+      }
+      const { error } = await client.auth.updateUser({
+        password: password.value
+      });
+      if (error) {
+        say(error.message);
+      } else {
+        recoveryMode = false;
+        password.value = '';
+        password.placeholder = 'Password';
+        setMode('login');
+        say('Password updated. You can now sign in.');
+        await client.auth.signOut();
+      }
+    });
+
+  } catch (error) {
+    screen.style.display = 'flex';
+    say(error.message || 'Authentication setup failed.');
+  }
+})();
+</script>
+
 </body>
 </html>
