@@ -1,0 +1,1772 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NewsSignal v13 — REALTIME Terminal · High-Impact Calendar</title>
+  
+  <!-- Tailwind CSS v4 -->
+  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.1.11"></script>
+  
+  <!-- Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  
+  <style>
+    /* Base Typography */
+    body {
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    }
+
+    /* Scrollbar Styling */
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: #0f172a; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 8px; }
+    ::-webkit-scrollbar-thumb:hover { background: #475569; }
+
+    /* Animations */
+    @keyframes flashRelease {
+      0% { background-color: rgba(244, 63, 94, 0.35); }
+      100% { background-color: transparent; }
+    }
+    .flash-release {
+      animation: flashRelease 1.2s ease-out 3;
+    }
+
+    @keyframes pulseRed {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(244, 63, 94, 0.5); }
+      50% { box-shadow: 0 0 0 6px rgba(244, 63, 94, 0); }
+    }
+    .risk-pulse {
+      animation: pulseRed 1.5s ease-in-out infinite;
+    }
+
+    /* Responsive Adjustments */
+    @media (max-width: 768px) {
+      main { padding: 0.75rem; gap: 0.75rem; }
+      #trendBoard { overflow-x: auto; }
+      #trendBoard .grid { min-width: 480px; }
+      .lg\:col-span-2, .lg\:col-span-7, .lg\:col-span-3 { grid-column: span 12 / span 12; }
+      .chart-ohlc { display: none; }
+      #tickerStrip { display: flex; }
+    }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-200 antialiased min-h-screen">
+
+  <!-- ============ HEADER ============ -->
+  <header class="sticky top-0 z-40 bg-slate-900/90 backdrop-blur border-b border-slate-800">
+    <div class="max-w-[1600px] mx-auto px-4">
+      <div class="flex items-center gap-4 h-14">
+        <div class="flex items-center gap-2.5 shrink-0">
+          <div class="w-9 h-9 rounded-lg bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center shadow-lg shadow-amber-500/20">
+            <img src="https://cdn.jsdelivr.net/npm/lucide-static@1.44.0/icons/activity.svg" class="w-5 h-5 text-slate-950" alt="NewsSignal logo">
+          </div>
+          <div class="leading-tight">
+            <div class="text-[15px] font-extrabold text-white tracking-tight">NewsSignal</div>
+            <div class="text-[10px] font-semibold text-amber-400 tracking-[0.2em]">v13 · LIVE</div>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-1 bg-slate-800/60 rounded-lg p-0.5">
+        <button id="tabDash" class="text-[12px] font-bold px-3 py-1 rounded-md">Dashboard</button>
+        <button id="tabCot" class="text-[12px] font-bold px-3 py-1 rounded-md">COT</button>
+      </div>
+      <div id="statusPill" class="hidden md:flex items-center gap-2 rounded-full border border-slate-600/50 bg-slate-800/60 px-3 py-1">
+          <span class="relative flex h-2 w-2">
+            <span id="statusPing" class="absolute inline-flex h-full w-full rounded-full opacity-60"></span>
+            <span id="statusDot" class="relative inline-flex rounded-full h-2 w-2 bg-slate-400"></span>
+          </span>
+          <span id="statusText" class="text-[11px] font-semibold text-slate-300">CONNECTING…</span>
+        </div>
+
+        <div class="hidden lg:flex items-center gap-1.5 text-slate-400">
+          <img src="https://cdn.jsdelivr.net/npm/lucide-static@1.44.0/icons/clock.svg" class="w-4 h-4" alt="">
+          <span id="liveClock" class="text-[12px] font-medium tabular-nums"></span>
+        </div>
+
+        <div class="flex-1"></div>
+
+        <div class="hidden sm:flex items-center gap-2 bg-slate-800/70 border border-slate-700 rounded-lg px-3 py-1.5 w-56 focus-within:border-slate-500 transition-colors">
+          <img src="https://cdn.jsdelivr.net/npm/lucide-static@1.44.0/icons/search.svg" class="w-4 h-4 text-slate-500" alt="">
+          <input type="text" placeholder="Search symbols, news..." class="bg-transparent outline-none text-[12px] placeholder-slate-500 w-full">
+        </div>
+
+        <div class="flex items-center gap-1">
+          <button id="notifBtn" class="relative p-2 rounded-lg hover:bg-slate-800 transition-colors" title="Enable event alerts">
+            <img src="https://cdn.jsdelivr.net/npm/lucide-static@1.44.0/icons/bell.svg" class="w-[18px] h-[18px] text-slate-400" alt="Enable notifications">
+            <span class="absolute top-1 right-1 h-2 w-2 rounded-full bg-rose-500 ring-2 ring-slate-900"></span>
+          </button>
+          <button class="p-2 rounded-lg hover:bg-slate-800 transition-colors" title="Settings">
+            <img src="https://cdn.jsdelivr.net/npm/lucide-static@1.44.0/icons/settings.svg" class="w-[18px] h-[18px] text-slate-400" alt="Settings">
+          </button>
+          <div class="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-[11px] font-bold text-white ring-2 ring-slate-700 ml-1">TR</div>
+        </div>
+      </div>
+
+      <div class="hidden lg:flex items-center gap-5 pb-2.5 overflow-x-auto no-scrollbar" id="tickerStrip"></div>
+    </div>
+  </header>
+
+  <!-- ============ MAIN ============ -->
+  <main id="dashMain" class="max-w-[1600px] mx-auto p-4 grid gap-4 lg:grid-cols-12">
+
+    <!-- ===== SIDEBAR ===== -->
+    <aside class="lg:col-span-2">
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
+        <div class="flex items-center justify-between px-4 py-3 border-b border-slate-800">
+          <span class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Markets</span>
+          <div class="flex items-center gap-2">
+            <span class="text-[9px] font-bold text-slate-500" id="healthTxt">…</span>
+            <button id="refreshBtn" class="p-1 rounded hover:bg-slate-800 transition-colors" title="Refresh all now">
+              <img src="https://cdn.jsdelivr.net/npm/lucide-static@1.44.0/icons/refresh-cw.svg" class="w-3.5 h-3.5 text-slate-500" alt="">
+            </button>
+          </div>
+        </div>
+        <div id="assetList" class="max-h-[calc(100vh-230px)] overflow-y-auto py-1.5"></div>
+      </div>
+    </aside>
+
+    <!-- ===== CENTER ===== -->
+    <section class="lg:col-span-7 space-y-4 min-w-0">
+      <!-- Chart card -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4">
+        <div class="flex flex-wrap items-start justify-between gap-3 pb-3">
+          <div class="flex items-center gap-3">
+            <div class="w-11 h-11 rounded-xl bg-slate-800 flex items-center justify-center">
+              <img src="https://cdn.jsdelivr.net/npm/lucide-static@1.44.0/icons/trending-up.svg" class="w-5 h-5 text-amber-400" alt="">
+            </div>
+            <div>
+              <div class="flex items-center gap-2">
+                <span id="chartSym" class="text-xl font-extrabold text-white tracking-tight">XAUUSD</span>
+                <span id="chartName" class="text-[12px] text-slate-400"></span>
+                <span id="chartSrc" class="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-slate-800 text-slate-400"></span>
+              </div>
+              <div class="flex items-center gap-2.5 mt-0.5">
+                <span id="chartPrice" class="text-2xl font-light text-white tabular-nums"></span>
+                <span id="chartPct" class="text-[13px] font-bold rounded-md px-1.5 py-0.5 tabular-nums"></span>
+              </div>
+            </div>
+          </div>
+          <div class="flex items-center gap-3 text-[11px] chart-ohlc">
+            <div class="text-right"><div class="text-slate-500">Open</div><div id="statOpen" class="font-semibold text-slate-300 tabular-nums"></div></div>
+            <div class="text-right"><div class="text-slate-500">High</div><div id="statHigh" class="font-semibold text-slate-300 tabular-nums"></div></div>
+            <div class="text-right"><div class="text-slate-500">Low</div><div id="statLow" class="font-semibold text-slate-300 tabular-nums"></div></div>
+            <div class="text-right"><div class="text-slate-500">Vol</div><div id="statVol" class="font-semibold text-slate-300 tabular-nums"></div></div>
+          </div>
+        </div>
+
+        <div class="relative">
+          <svg id="mainChart" viewBox="0 0 800 280" class="w-full h-auto block" preserveAspectRatio="none"></svg>
+          <div class="absolute top-2 right-2 flex items-center gap-3 bg-slate-950/70 backdrop-blur rounded-lg px-2.5 py-1.5 text-[10px] text-slate-400 border border-slate-800">
+            <span class="flex items-center gap-1.5"><span class="w-3.5 border-t-2 border-dashed border-rose-400 inline-block"></span> News event</span>
+            <span class="flex items-center gap-1.5"><span class="w-3.5 h-1 rounded inline-block bg-amber-400"></span> Close</span>
+            <span class="flex items-center gap-1.5"><span id="tickAgeDot" class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse inline-block"></span> <span id="tickAge">live</span></span>
+          </div>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-x-3 gap-y-2 pt-3 mt-1 border-t border-slate-800">
+          <span class="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">TF:</span>
+          <div class="flex items-center gap-1 bg-slate-800/40 rounded-lg p-0.5">
+            <button id="tf1m" class="text-[11px] font-semibold px-2 py-1 rounded-md">1m</button>
+            <button id="tf5m" class="text-[11px] font-semibold px-2 py-1 rounded-md">5m</button>
+            <button id="tf1h" class="text-[11px] font-semibold px-2 py-1 rounded-md">1h</button>
+            <button id="tf1D" class="text-[11px] font-semibold px-2 py-1 rounded-md">1D</button>
+          </div>
+          <span class="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Chart:</span>
+          <div class="flex items-center gap-1 bg-slate-800/40 rounded-lg p-0.5">
+            <button id="btnCandle" class="text-[11px] font-semibold px-2 py-1 rounded-md">Candles</button>
+            <button id="btnLine" class="text-[11px] font-semibold px-2 py-1 rounded-md">Line</button>
+          </div>
+          <span class="flex-1"></span>
+          <span class="text-[10px] text-slate-500 tabular-nums" id="chartUpdated"></span>
+        </div>
+
+        <p class="text-[10px] text-slate-600 pt-2 leading-relaxed">
+          LIVE: XAUUSD (Hyperliquid xyz:GOLD) and NAS100 (xyz:XYZ100) stream in real time over WebSocket, 24/7. These are perpetual-futures markets that track spot gold and the Nasdaq-100 closely but can differ slightly from your broker's feed. Signals are computed from price action, not predictions.
+          High-Impact Calendar below covers the red-flag releases with bias + likely direction for DXY / XAUUSD / NAS100.
+        </p>
+      </div>
+
+      <!-- Signal detail -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4">
+        <div class="flex items-center justify-between pb-3">
+          <div class="flex items-center gap-2">
+            <img src="https://cdn.jsdelivr.net/npm/lucide-static@1.44.0/icons/target.svg" class="w-4 h-4 text-amber-400" alt="">
+            <span class="text-[13px] font-bold text-white">Signal Detail — <span id="sigSym">XAUUSD</span></span>
+          </div>
+          <span id="sigBadge" class="text-[11px] font-bold px-2 py-1 rounded-md"></span>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <div class="flex items-center justify-between text-[11px] text-slate-400 pb-1.5">
+              <span>Signal strength</span>
+              <span class="font-bold text-white tabular-nums" id="sigScore">0</span>
+            </div>
+            <div class="relative h-2.5 rounded-full bg-slate-800 overflow-hidden">
+              <div class="absolute inset-y-0 left-1/2 w-px bg-slate-600"></div>
+              <div id="sigBar" class="absolute inset-y-0 left-1/2 rounded-full transition-all duration-700" style="width:0%"></div>
+            </div>
+            <div class="flex justify-between text-[10px] text-slate-500 mt-1">
+              <span>Bearish −100</span><span>Neutral 0</span><span>Bullish +100</span>
+            </div>
+            <div class="flex items-center gap-2 mt-3">
+              <span class="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Confidence</span>
+              <div class="flex-1 h-1.5 rounded-full bg-slate-800 overflow-hidden">
+                <div id="sigConf" class="h-full rounded-full bg-gradient-to-r from-indigo-500 to-purple-400 transition-all duration-700"></div>
+              </div>
+              <span id="sigConfTxt" class="text-[11px] font-bold text-white tabular-nums"></span>
+            </div>
+          </div>
+
+          <div class="rounded-xl bg-slate-950/60 border border-slate-800 p-3">
+            <div class="text-[10px] uppercase tracking-wider text-slate-500 font-semibold pb-2">Suggested plan</div>
+            <div id="sigPlan" class="space-y-1.5 text-[12px]"></div>
+          </div>
+        </div>
+
+        <div class="mt-3 pt-3 border-t border-slate-800 flex items-start gap-2">
+          <img src="https://cdn.jsdelivr.net/npm/lucide-static@1.44.0/icons/star.svg" class="w-3.5 h-3.5 text-amber-400 mt-0.5 shrink-0" alt="">
+          <p id="sigReason" class="text-[12px] text-slate-400 leading-relaxed"></p>
+        </div>
+      </div>
+
+      <!-- Multi-timeframe trend card -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4">
+        <div class="flex items-center justify-between pb-3">
+          <div class="flex items-center gap-2">
+            <img src="https://cdn.jsdelivr.net/npm/lucide-static@1.44.0/icons/line-chart.svg" class="w-4 h-4 text-violet-400" alt="">
+            <span class="text-[13px] font-bold text-white">Multi-Timeframe Trend — <span id="trendSym">XAUUSD</span></span>
+          </div>
+          <span id="regimeChip" class="text-[11px] font-bold px-2 py-1 rounded-md"></span>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div class="rounded-xl bg-slate-950/60 border border-slate-800 p-3">
+            <div class="flex items-center justify-between pb-2">
+              <span class="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Daily Trend (1D)</span>
+              <span id="dailyTrendLabel" class="text-[11px] font-bold"></span>
+            </div>
+            <div class="relative h-2.5 rounded-full bg-slate-800 overflow-hidden mb-1">
+              <div class="absolute inset-y-0 left-1/2 w-px bg-slate-600"></div>
+              <div id="dailyTrendBar" class="absolute inset-y-0 left-1/2 rounded-full transition-all duration-700"></div>
+            </div>
+            <div class="flex justify-between text-[9px] text-slate-500 mb-2">
+              <span>−100</span><span>0</span><span>+100</span>
+            </div>
+            <div id="dailyTrendStats" class="grid grid-cols-3 gap-1 text-[10px] text-slate-400"></div>
+          </div>
+
+          <div class="rounded-xl bg-slate-950/60 border border-slate-800 p-3">
+            <div class="flex items-center justify-between pb-2">
+              <span class="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Weekly Trend (1W)</span>
+              <span id="weeklyTrendLabel" class="text-[11px] font-bold"></span>
+            </div>
+            <div class="relative h-2.5 rounded-full bg-slate-800 overflow-hidden mb-1">
+              <div class="absolute inset-y-0 left-1/2 w-px bg-slate-600"></div>
+              <div id="weeklyTrendBar" class="absolute inset-y-0 left-1/2 rounded-full transition-all duration-700"></div>
+            </div>
+            <div class="flex justify-between text-[9px] text-slate-500 mb-2">
+              <span>−100</span><span>0</span><span>+100</span>
+            </div>
+            <div id="weeklyTrendStats" class="grid grid-cols-2 gap-1 text-[10px] text-slate-400"></div>
+          </div>
+        </div>
+
+        <div class="mt-3 pt-3 border-t border-slate-800 flex items-start gap-2">
+          <img src="https://cdn.jsdelivr.net/npm/lucide-static@1.44.0/icons/info.svg" class="w-3.5 h-3.5 text-slate-500 mt-0.5 shrink-0" alt="">
+          <p id="trendReason" class="text-[11px] text-slate-500 leading-relaxed"></p>
+        </div>
+      </div>
+    
+    <!-- Currency strength -->
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4">
+      <div class="flex items-center justify-between pb-3"><span class="text-[13px] font-bold text-white">Currency Strength</span><span class="text-[10px] text-slate-500">daily + weekly trend and today's move vs USD</span></div>
+      <div id="curBoard" class="grid grid-cols-1 sm:grid-cols-2 gap-2"></div>
+    </div>
+    <!-- Market interpretation -->
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4">
+      <div class="flex items-center justify-between pb-3"><span class="text-[13px] font-bold text-white">Market Interpretation: <span id="interpSym">XAUUSD</span></span><span id="interpBias" class="text-[11px] font-bold px-2 py-1 rounded-md"></span></div>
+      <div id="interpDrivers" class="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3"></div>
+      <div class="text-[10px] uppercase tracking-wider text-slate-500 font-semibold pb-1">What to look for</div>
+      <ul id="interpLook" class="space-y-1.5 text-[11px] text-slate-300 list-disc pl-4 mb-3"></ul>
+      <div class="text-[10px] uppercase tracking-wider text-slate-500 font-semibold pb-1">News bias: recent headlines moving this market</div>
+      <ul id="interpNews" class="space-y-1 text-[11px] text-slate-400 list-none"></ul>
+      <p class="text-[9px] text-slate-600 mt-3">Composite of technicals, keyword-scored headlines, dollar move and COT positioning. A decision aid, not a prediction or advice.</p>
+    </div>
+  </section>
+
+    <!-- ===== RIGHT ===== -->
+    <section class="lg:col-span-3 space-y-4 min-w-0">
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
+        <div class="flex items-center justify-between px-4 py-3 border-b border-slate-800">
+          <div class="flex items-center gap-2">
+            <img src="https://cdn.jsdelivr.net/npm/lucide-static@1.44.0/icons/zap.svg" class="w-4 h-4 text-amber-400" alt="">
+            <span class="text-[13px] font-bold text-white">Live Signal Board</span>
+          </div>
+          <span class="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 rounded-full px-2 py-0.5" id="signalCount">0 active</span>
+        </div>
+        <div id="signalBoard" class="divide-y divide-slate-800/70 max-h-[300px] overflow-y-auto"></div>
+      </div>
+
+      <!-- Trend board -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
+        <div class="flex items-center justify-between px-4 py-3 border-b border-slate-800">
+          <div class="flex items-center gap-2">
+            <img src="https://cdn.jsdelivr.net/npm/lucide-static@1.44.0/icons/line-chart.svg" class="w-4 h-4 text-violet-400" alt="">
+            <span class="text-[13px] font-bold text-white">Long-Term Trend Board</span>
+          </div>
+          <span class="text-[10px] text-slate-500">D · W · LT</span>
+        </div>
+        <div class="grid grid-cols-[40px_1fr_1fr_1fr_46px_88px] gap-x-1 px-3 py-2 text-[9px] uppercase tracking-wider text-slate-500 font-bold border-b border-slate-800/60 items-center">
+          <span>Symbol</span><span class="text-center">Daily</span><span class="text-center">Weekly</span><span class="text-center">L-Term</span><span class="text-right">Regime</span><span class="text-right">Bias</span>
+        </div>
+        <div id="trendBoard" class="divide-y divide-slate-800/60 max-h-[300px] overflow-y-auto"></div>
+        <div class="px-4 py-2 border-t border-slate-800/60 bg-slate-950/40">
+          <p class="text-[9px] text-slate-500 leading-relaxed">
+            <b class="text-slate-400">Trade Bias</b> — actionable read for a daily trader from the D/W combo.
+            Hover a bias chip for the full explanation. Click any row for detail.
+          </p>
+          <div class="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5 text-[9px] text-slate-500">
+            <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-emerald-400/70"></span> Long dips</span>
+            <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-teal-400/70"></span> Buy pullbacks</span>
+            <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-rose-400/70"></span> Short rallies</span>
+            <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-amber-400/70"></span> Fade bounces</span>
+            <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-slate-500/70"></span> No edge</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
+        <div class="flex items-center justify-between px-4 py-3 border-b border-slate-800">
+          <div class="flex items-center gap-2">
+            <img src="https://cdn.jsdelivr.net/npm/lucide-static@1.44.0/icons/newspaper.svg" class="w-4 h-4 text-sky-400" alt="">
+            <span class="text-[13px] font-bold text-white">News Flow</span>
+          </div>
+          <div class="flex items-center gap-1">
+            <span id="newsLiveDot" class="relative flex h-2 w-2">
+              <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-slate-500 opacity-60"></span>
+              <span class="relative inline-flex rounded-full h-2 w-2 bg-slate-500"></span>
+            </span>
+            <span class="text-[9px] text-slate-500 font-bold" id="newsAge">—</span>
+            <button class="p-1 rounded hover:bg-slate-800 transition-colors" title="Filter news">
+              <img src="https://cdn.jsdelivr.net/npm/lucide-static@1.44.0/icons/filter.svg" class="w-3.5 h-3.5 text-slate-500" alt="">
+            </button>
+          </div>
+        </div>
+        <div id="newsFeed" class="max-h-[420px] overflow-y-auto divide-y divide-slate-800/60"></div>
+      </div>
+
+      <!-- ===== HIGH-IMPACT CALENDAR (red-flag news) ===== -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
+        <div class="flex items-center justify-between px-4 py-3 border-b border-slate-800">
+          <div class="flex items-center gap-2">
+            <img src="https://cdn.jsdelivr.net/npm/lucide-static@1.44.0/icons/calendar-days.svg" class="w-4 h-4 text-rose-400" alt="">
+            <span class="text-[13px] font-bold text-white">High-Impact Calendar</span>
+          </div>
+          <span class="text-[9px] font-bold text-rose-300 bg-rose-500/10 border border-rose-500/40 rounded-full px-2 py-0.5">RED FLAG · 4★+</span>
+        </div>
+        
+        <!-- Countdown banner -->
+        <div id="eventCountdown" class="px-4 py-3 bg-slate-950/60 border-b border-slate-800/60">
+          <div class="flex items-center gap-3">
+            <span id="evNextDot" class="relative flex h-2.5 w-2.5 shrink-0">
+              <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-60"></span>
+              <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-400"></span>
+            </span>
+            <div class="min-w-0 flex-1">
+              <div class="text-[9px] uppercase tracking-wider text-slate-500 font-bold">Next high-impact release</div>
+              <div id="evNextName" class="text-[12px] font-bold text-slate-100 truncate">—</div>
+            </div>
+            <div class="text-right shrink-0">
+              <div id="evNextClock" class="text-[15px] font-extrabold text-amber-300 tabular-nums">--:--:--</div>
+              <div id="evNextSub" class="text-[9px] text-slate-500 font-semibold">—</div>
+            </div>
+          </div>
+          <div class="mt-2 h-1 rounded-full bg-slate-800 overflow-hidden">
+            <div id="evProgress" class="h-full bg-gradient-to-r from-rose-500 to-rose-300 transition-all duration-1000" style="width:0%"></div>
+          </div>
+        </div>
+
+        <!-- Overall Bias Matrix -->
+        <div id="evBias" class="px-4 py-3 border-b border-slate-800/60 bg-slate-950/40">
+        <div class="text-[9px] uppercase tracking-wider text-slate-500 font-bold mb-2">Next red-folder event · likely reaction if actual beats forecast</div>
+        <div id="evBiasGrid" class="grid grid-cols-7 gap-1 text-center"></div>
+        <p id="evBiasNote" class="text-[10px] text-slate-500 mt-2 leading-relaxed">—</p>
+      </div>
+      <div id="eventList" class="divide-y divide-slate-800/60 max-h-[640px] overflow-y-auto"></div>
+      </div>
+    </section>
+  </main>
+<main id="cotMain" class="hidden max-w-[1600px] mx-auto p-4 space-y-4">
+  <div id="cotBody" class="grid gap-4 lg:grid-cols-2"></div>
+  <p id="cotNote" class="text-[11px] text-slate-500"></p>
+</main>
+
+  <script>
+    // ================================================================
+    //  NEWSIGNAL v13 — REALTIME core + HIGH-IMPACT CALENDAR
+    //  (red-flag 4★+ events with bias matrix for DXY/XAUUSD/NAS100)
+    // ================================================================
+
+    const API = '/api';   // same-origin helpers served by _worker.js (calendar, news, COT)
+        const ASSETS = [
+      { sym:'XAUUSD', name:'Gold / USD',         dp:2, base:4000,  yahoo:'xyz:GOLD',   vol:0 },
+      { sym:'NAS100', name:'Nasdaq 100',         dp:2, base:29000, yahoo:'xyz:XYZ100', vol:0 },
+      { sym:'DXY',    name:'US Dollar Index',    dp:3, base:99,    yahoo:'DX-Y.NYB',   vol:0 },
+      { sym:'EURUSD', name:'Euro / US Dollar',   dp:5, base:1.16,  yahoo:'EURUSD=X',   vol:0 },
+      { sym:'GBPUSD', name:'Pound / US Dollar',  dp:5, base:1.33,  yahoo:'GBPUSD=X',   vol:0 },
+      { sym:'USDJPY', name:'US Dollar / Yen',    dp:3, base:150,   yahoo:'USDJPY=X',   vol:0 },
+      { sym:'AUDUSD', name:'Aussie / US Dollar', dp:5, base:0.66,  yahoo:'AUDUSD=X',   vol:0 },
+    ];
+
+    const SIGNAL_CFG = {};
+    ASSETS.forEach(a => { SIGNAL_CFG[a.sym] = { score:0, conf:0, plan:['—','—','—'], reason:'Calculating from live candles…' }; });
+
+    const TF_MAP = {
+      '1m': { interval:'1m', range:'1d' },
+      '5m': { interval:'5m', range:'5d' },
+      '1h': { interval:'60m', range:'1mo' },
+      '1D': { interval:'1d', range:'6mo' },
+    };
+    const STEP_MS = { '1m':60000, '5m':300000, '1h':3600000, '1D':86400000 };
+
+    // ---------------------------------------------------------------
+    //  localStorage persistence
+    // ---------------------------------------------------------------
+    const PREFS_KEY = 'newssignal.prefs';
+    function loadPrefs() {
+      try {
+        const raw = localStorage.getItem(PREFS_KEY);
+        if (raw) {
+          const p = JSON.parse(raw);
+          return { chartType: (p.chartType === 'line' || p.chartType === 'candle') ? p.chartType : null, chartTf: ['1m','5m','1h','1D'].includes(p.chartTf) ? p.chartTf : null };
+        }
+      } catch (e) {}
+      return {};
+    }
+    function savePrefs() {
+      try { localStorage.setItem(PREFS_KEY, JSON.stringify({ chartType: state.chartType, chartTf: state.chartTf })); } catch (e) {}
+    }
+
+    // ---------------------------------------------------------------
+    //  Network helpers
+    // ---------------------------------------------------------------
+    async function fetchJson(url, timeoutMs = 9000) {
+      const ctrl = new AbortController(), timer = setTimeout(() => ctrl.abort(), timeoutMs);
+      try {
+        const r = await fetch(url, { signal: ctrl.signal });
+        if (!r.ok) { let m = ''; try { m = (await r.json()).error || ''; } catch (_) {} throw new Error('HTTP ' + r.status + (m ? ': ' + m : '')); }
+        return await r.json();
+      } finally { clearTimeout(timer); }
+    }
+    // ---- backup routes so everything still works if the /api helper is missing (e.g. static hosting) ----
+    let apiDownUntil = 0;
+    async function callApi(path, timeoutMs = 12000) {
+      if (Date.now() < apiDownUntil) throw new Error('api unavailable');
+      try { return await fetchJson(`${API}${path}`, timeoutMs); }
+      catch (e) { if (/^HTTP (404|405)/.test(e.message)) apiDownUntil = Date.now() + 300000; throw e; }
+    }
+    const PROXIES = ['https://api.allorigins.win/raw?url=', 'https://corsproxy.io/?url='];
+    async function viaProxies(url, timeout = 10000) { let err; for (const p of PROXIES) { try { return await fetchJson(p + encodeURIComponent(url), timeout); } catch (e) { err = e; } } throw err; }
+    const GN = q => `https://news.google.com/rss/search?q=${q}+when:1d&hl=en-US&gl=US&ceid=US:en`;
+    const NEWS_FB = [['Google · Red folder', GN('(NFP+OR+CPI+OR+PPI+OR+FOMC+OR+payrolls+OR+PCE)')], ['Google · Gold', GN('gold+price')], ['Google · Dollar', GN('dollar+index+OR+Treasury+yields')],
+      ['BBC Business', 'https://feeds.bbci.co.uk/news/business/rss.xml'], ['CNBC Markets', 'https://www.cnbc.com/id/10000664/device/rss/rss.html'], ['MarketWatch', 'https://feeds.content.dowjones.io/public/rss/mw_topstories'], ['FXStreet', 'https://www.fxstreet.com/rss/news']];
+    async function newsFallback() {
+      const res = await Promise.allSettled(NEWS_FB.map(async ([name, url]) => {
+        const j = await fetchJson('https://api.rss2json.com/v1/api.json?rss_url=' + encodeURIComponent(url), 12000);
+        if (j.status !== 'ok') throw new Error(name);
+        return j.items.slice(0, 10).map(it => { let title = it.title, src = name; const g = title.match(/^(.*) - ([^-]{2,40})$/); if (name.startsWith('Google') && g) { title = g[1]; src = g[2]; }
+          return { title, src, ts: Date.parse(String(it.pubDate).replace(' ', 'T') + 'Z') || Date.now(), link: it.link }; });
+      }));
+      const items = res.filter(x => x.status === 'fulfilled').flatMap(x => x.value).sort((a, b) => b.ts - a.ts);
+      if (!items.length) throw new Error('all backup news feeds failed');
+      return { ok: res.filter(x => x.status === 'fulfilled').length, total: NEWS_FB.length, items, fb: true };
+    }
+    const CAL_KEEP = ['USD','EUR','GBP','JPY','AUD','CAD','CHF','NZD','CNY'];
+    const CAL_KEY = /ppi|producer price|pce|ism |retail sales|gdp|powell|fomc|federal funds|fed chair|adp|jolts|jobless|unemployment claims|non-farm|nonfarm|cpi/i;
+    async function calFallback() {
+      let all = [];
+      for (const f of ['thisweek', 'nextweek']) { const url = `https://nfs.faireconomy.media/ff_calendar_${f}.json`; let j; try { j = await fetchJson(url); } catch (e) { try { j = await viaProxies(url); } catch (e2) { j = []; } } all = all.concat(j); }
+      if (!all.length) throw new Error('calendar backup empty');
+      const seen = new Set();
+      return all.filter(e => { const k = e.country + e.title + e.date; if (seen.has(k)) return false; seen.add(k); return true; })
+        .filter(e => CAL_KEEP.includes(e.country) && (e.impact === 'High' || (e.country === 'USD' && e.impact === 'Medium' && CAL_KEY.test(e.title))))
+        .map(e => ({ title:e.title, country:e.country, date:e.date, impact:e.impact, forecast:e.forecast, previous:e.previous }));
+    }
+    const TFF_RE = [/^lev_money_positions_long(_all)?$/i, /^lev_money_positions_short(_all)?$/i, /^asset_mgr_positions_long(_all)?$/i, /^asset_mgr_positions_short(_all)?$/i];
+    const tffCfg = (title, code, inv) => ({ title, ds:'gpe5-46if', code, group:'Leveraged Funds', group2:'Asset Managers', f:TFF_RE, inv });
+    const COT_CFG = {
+      XAUUSD: { title:'Gold · COMEX', ds:'72hh-3qpy', code:'088691', group:'Managed Money', group2:'Producer/Merchant', f:[/^m_money_positions_long(_all)?$/i, /^m_money_positions_short(_all)?$/i, /^prod_merc_positions_long(_all)?$/i, /^prod_merc_positions_short(_all)?$/i] },
+      NAS100: tffCfg('Nasdaq-100 E-mini · CME', '209742'), DXY: tffCfg('US Dollar Index · ICE', '098662'), EURUSD: tffCfg('Euro FX · CME', '099741'),
+      GBPUSD: tffCfg('British Pound · CME', '096742'), USDJPY: tffCfg('Japanese Yen · CME (inverse of USDJPY)', '097741', true), AUDUSD: tffCfg('Australian Dollar · CME', '232741'),
+    };
+    async function cotDirect() {   // straight from the CFTC (browser), used when /api/cot is unavailable
+      const num = (r, re) => { const k = Object.keys(r).find(k => re.test(k)); return k ? +r[k] : NaN; }, out = {};
+      await Promise.all(Object.entries(COT_CFG).map(async ([sym, c]) => {
+        const r = await fetch(`https://publicreporting.cftc.gov/resource/${c.ds}.json?cftc_contract_market_code=${c.code}&$order=report_date_as_yyyy_mm_dd%20DESC&$limit=156`);
+        if (!r.ok) throw new Error(`CFTC ${sym} HTTP ${r.status}`);
+        const rows = await r.json(); if (!rows.length) throw new Error(`CFTC ${sym}: no rows`);
+        const mapped = rows.map(x => ({ d:String(x.report_date_as_yyyy_mm_dd).slice(0, 10), l:num(x, c.f[0]), s:num(x, c.f[1]), l2:num(x, c.f[2]), s2:num(x, c.f[3]), oi:num(x, /^open_interest_all$/i) }));
+        if (mapped.some(x => [x.l, x.s, x.l2, x.s2, x.oi].some(Number.isNaN))) throw new Error(`CFTC ${sym}: unexpected fields: ` + Object.keys(rows[0]).slice(0, 60).join(','));
+        out[sym] = { title:c.title, group:c.group, group2:c.group2, inv:!!c.inv, rows:mapped };
+      }));
+      return out;
+    }
+    async function yahooViaProxy(inst, range, interval) {
+      const j = await viaProxies(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(inst)}?interval=${interval}&range=${range}`);
+      const r0 = j && j.chart && j.chart.result && j.chart.result[0]; if (!r0 || !r0.timestamp) throw new Error('No Yahoo data');
+      const q = r0.indicators.quote[0], m = r0.meta;
+      const series = r0.timestamp.map((t, i) => ({ t:t * 1000, o:q.open[i] ?? q.close[i], h:q.high[i] ?? q.close[i], l:q.low[i] ?? q.close[i], c:q.close[i] })).filter(s => s.c != null);
+      return { price:m.regularMarketPrice ?? series[series.length - 1].c, prevClose:m.chartPreviousClose ?? series[0].c, open:m.regularMarketOpen ?? series[0].o, high:m.regularMarketDayHigh ?? Math.max(...series.map(s => s.h)), low:m.regularMarketDayLow ?? Math.min(...series.map(s => s.l)), volume:0, series };
+    }
+        async function fetchText(url) {
+      const r = await fetch(`${API}/rss?url=` + encodeURIComponent(url));
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.text();
+    }
+    const HL_MS = { '1m':6e4, '5m':3e5, '15m':9e5, '1h':36e5, '1d':864e5 };
+    async function hlPost(body) {
+      try { const r = await fetch('https://api.hyperliquid.xyz/info', { method:'POST', headers:{ 'Content-Type':'application/json' }, body:JSON.stringify(body) }); if (!r.ok) throw new Error('HL ' + r.status); return await r.json(); }
+      catch (e) { const r = await fetch(`${API}/hl`, { method:'POST', headers:{ 'Content-Type':'application/json' }, body:JSON.stringify(body) }); if (!r.ok) throw new Error('HL proxy ' + r.status); return await r.json(); }
+    }
+    async function hlCandles(coin, interval, count) {   // times in ms
+      const now = Date.now();
+      const rows = await hlPost({ type:'candleSnapshot', req:{ coin, interval, startTime: now - count * HL_MS[interval], endTime: now } });
+      return rows.map(r => ({ t:r.t, o:+r.o, h:+r.h, l:+r.l, c:+r.c, v:+r.v })).filter(s => s.c > 0);
+    }
+    const dailyCache = {};
+    async function hlDaily(coin) { const c = dailyCache[coin]; if (c && Date.now() - c.at < 60000) return c.d; const d = await hlCandles(coin, '1d', 3); dailyCache[coin] = { at:Date.now(), d }; return d; }
+    const isHL = c => c.startsWith('xyz:');
+    const BIN = { 'EURUSD=X':'EURUSDT', 'GBPUSD=X':'GBPUSDT', 'AUDUSD=X':'AUDUSDT' };   // backup real-time source (USDT proxy)
+    async function binCandles(sym, iv, n) {
+      const r = await fetch(`https://api.binance.com/api/v3/klines?symbol=${sym}&interval=${iv}&limit=${Math.min(n, 1000)}`);
+      if (!r.ok) throw new Error('Binance ' + r.status);
+      return (await r.json()).map(k => ({ t:k[0], o:+k[1], h:+k[2], l:+k[3], c:+k[4], v:+k[5] }));
+    }
+    const dayCache = {};
+    async function viaCandles(key, get, interval) {
+      if (interval === '1m') {
+        const c = dayCache[key], dp = c && Date.now() - c.at < 60000 ? c.d : null;
+        const [m1, d] = await Promise.all([get('1m', 500), dp ? Promise.resolve(dp) : get('1d', 3)]);
+        if (!dp) dayCache[key] = { at:Date.now(), d };
+        if (!m1.length || !d.length) throw new Error('No data');
+        const day = d[d.length - 1], prev = d[d.length - 2] || day;
+        return { price:m1[m1.length - 1].c, prevClose:prev.c, open:day.o, high:day.h, low:day.l, volume:Math.round(day.v || 0), series:m1 };
+      }
+      const [iv, n] = ({ '5m':['5m', 600], '15m':['15m', 300], '60m':['1h', 500], '1d':['1d', 180] })[interval] || ['5m', 600];
+      const series = await get(iv, n);
+      if (!series.length) throw new Error('Empty series');
+      const last = series[series.length - 1];
+      return { price:last.c, prevClose:(series[series.length - 2] || last).c, open:series[0].o, high:Math.max(...series.map(s => s.h)), low:Math.min(...series.map(s => s.l)), volume:0, series };
+    }
+    async function fetchYahoo(inst, range = '1d', interval = '5m') {   // name kept; inst = Hyperliquid market or Yahoo symbol
+      if (isHL(inst)) return viaCandles(inst, (iv, n) => hlCandles(inst, iv, n), interval);
+      try {
+        const q = await callApi(`/yahoo?sym=${encodeURIComponent(inst)}&range=${range}&interval=${interval}`);
+        if (!q.series || !q.series.length) throw new Error(q.error || 'No data');
+        return q;
+      } catch (e) {
+        if (BIN[inst]) { try { return await viaCandles(inst, (iv, n) => binCandles(BIN[inst], iv, n), interval); } catch (e2) {} }
+        return yahooViaProxy(inst, range, interval);
+      }
+    }
+    let hlRetry = 0;
+    function connectHL() {   // real-time ticks over WebSocket
+      try {
+        const ws = new WebSocket('wss://api.hyperliquid.xyz/ws');
+        ws.onopen = () => { hlRetry = 0; ASSETS.filter(a => isHL(a.yahoo)).forEach(a => ws.send(JSON.stringify({ method:'subscribe', subscription:{ type:'candle', coin:a.yahoo, interval:'1m' } }))); };
+        ws.onmessage = e => { try {
+          const m = JSON.parse(e.data); if (m.channel !== 'candle') return;
+          for (const c of (Array.isArray(m.data) ? m.data : [m.data])) {
+            const a = ASSETS.find(x => x.yahoo === c.s || x.yahoo.split(':')[1] === c.s), q = a && state.quotes[a.sym];
+            if (!q || state.sources[a.sym] !== 'LIVE') continue;
+            const price = +c.c; q.price = price; q.high = Math.max(q.high, price); q.low = Math.min(q.low, price); q.ts = Date.now(); q.ws = true;
+            updateAssetRow(a.sym); bumpLiveTick(a.sym, price);
+          } } catch (_) {} };
+        ws.onclose = () => setTimeout(connectHL, Math.min(30000, 3000 * Math.pow(2, hlRetry++)));
+        ws.onerror = () => { try { ws.close(); } catch (_) {} };
+      } catch (e) {}
+    }
+    async function fetchCoinGecko() {
+      const res = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd&include_24hr_change=true');
+      if (!res.ok) throw new Error('CG HTTP ' + res.status);
+      const d = await res.json();
+      const btc = d.bitcoin;
+      if (!btc?.usd) throw new Error('No CG data');
+      const p = btc.usd, chg = btc.usd_24h_change || 0;
+      return { price: p, prevClose: p / (1 + chg / 100), open: p, high: p, low: p, volume: 0, series: [] };
+    }
+    async function fetchFrankfurter() {
+      const res = await fetch('https://api.frankfurter.app/latest?from=USD&to=EUR');
+      if (!res.ok) throw new Error('FF HTTP ' + res.status);
+      const d = await res.json();
+      const rate = d?.rates?.EUR;
+      if (!rate) throw new Error('No FF data');
+      return { price: rate, prevClose: rate, open: rate, high: rate, low: rate, volume: 0, series: [] };
+    }
+    async function fetchBinanceRest(symbol) {
+      const res = await fetch(`https://api.binance.com/api/v3/ticker/24hr?symbol=${symbol}`);
+      if (!res.ok) throw new Error('Binance HTTP ' + res.status);
+      const d = await res.json();
+      return { price: parseFloat(d.lastPrice), prevClose: parseFloat(d.prevClosePrice), open: parseFloat(d.openPrice), high: parseFloat(d.highPrice), low: parseFloat(d.lowPrice), volume: Math.round(parseFloat(d.quoteVolume)), series: [] };
+    }
+
+    // ---------------------------------------------------------------
+    //  HIGH-IMPACT EVENT CALENDAR (4★+ only — red-flag news)
+    // ---------------------------------------------------------------
+    const ET_OFFSET_MAP = [
+      { before: Date.UTC(2026, 10, 1), offsetH: 4 },   // EDT until Nov 1
+      { before: Infinity, offsetH: 5 }                  // EST from Nov 1
+    ];
+    function etToSast(year, month0, day, hourET, minET) {
+      const off = ET_OFFSET_MAP.find(o => Date.UTC(year, month0, day) < o.before).offsetH;
+      return Date.UTC(year, month0, day, hourET + off, minET);
+    }
+
+    let EVENTS = [   // fallback only; the live calendar replaces this
+      { id:'fomc', name:'FOMC Rate Decision', when: etToSast(2026,9,28,14,0), imp:5, consensus:'—', prev:'—', dirs:{dxy:'up',xau:'down',nas100:'down'}, note:'Hawkish tone = USD up, gold and Nasdaq down. Dovish flips it.' },
+      { id:'nfp',  name:'US Jobs Report (Oct)', when: etToSast(2026,10,6,8,30), imp:5, consensus:'—', prev:'—', dirs:{dxy:'up',xau:'down',nas100:'down'}, note:'Strong jobs = USD up, gold down. Weak flips it.' },
+      { id:'cpi',  name:'US CPI (Oct)', when: etToSast(2026,10,10,8,30), imp:5, consensus:'—', prev:'—', dirs:{dxy:'up',xau:'down',nas100:'down'}, note:'Hotter than forecast = USD up, gold and tech down.' },
+    ];
+
+    function eventStatus(e, now) {
+      if (now >= e.when - 5 * 60000 && now <= e.when + 30 * 60000) return 'live';
+      if (now >= e.when) return 'done';
+      return 'upcoming';
+    }
+
+    function dirArrow(v) { return v === 'up' ? '▲' : v === 'down' ? '▼' : '—'; }
+    function dirColor(v) { return v === 'up' ? 'text-emerald-400' : v === 'down' ? 'text-rose-400' : 'text-slate-500'; }
+
+    // ---------------------------------------------------------------
+    //  Auto-flip + browser notifications
+    // ---------------------------------------------------------------
+    const AUTO_RESTORE = true;
+    const NOTIF_CFG = { enabled:false, supported:('Notification' in window), minImp:4, lastSent:{} };
+    function showEventToast(msg) {
+      let t = document.getElementById('evToast');
+      if (!t) {
+        t = document.createElement('div');
+        t.id = 'evToast';
+        t.className = 'fixed bottom-5 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-xl bg-slate-900 border border-amber-500/40 shadow-2xl shadow-amber-500/10 text-[12px] font-semibold text-amber-200 opacity-0 transition-opacity duration-300 pointer-events-none max-w-[90vw] text-center';
+        document.body.appendChild(t);
+      }
+      t.textContent = msg;
+      t.style.opacity = '1';
+      clearTimeout(t._h);
+      t._h = setTimeout(() => { t.style.opacity = '0'; }, 4000);
+    }
+    async function enableNotifications() {
+      if (!NOTIF_CFG.supported) { showEventToast('⚠️ Notifications not supported in this browser'); return false; }
+      try {
+        const perm = await Notification.requestPermission();
+        NOTIF_CFG.enabled = (perm === 'granted');
+        if (NOTIF_CFG.enabled) showEventToast('🔔 Alerts enabled — you’ll be pinged when high-impact events go live');
+        else showEventToast('Notifications blocked — enable them in site settings');
+        return NOTIF_CFG.enabled;
+      } catch (e) { return false; }
+    }
+    function sendLiveNotif(event) {
+      if (!NOTIF_CFG.enabled || !NOTIF_CFG.supported) return;
+      if (!event || event.imp < NOTIF_CFG.minImp) return;
+      if (NOTIF_CFG.lastSent[event.id]) return;
+      NOTIF_CFG.lastSent[event.id] = Date.now();
+      const whenStr = sast(event.when).replace(' SAST','');
+      try {
+        const n = new Notification('📊 NewsSignal — Macro Event LIVE', { body: `${event.name}\n${whenStr} SAST · Consensus: ${event.consensus}`, tag: event.id, renotify: true, icon: 'https://cdn.jsdelivr.net/npm/lucide-static@1.44.0/icons/activity.svg' });
+        n.onclick = () => { window.focus(); };
+      } catch (e) {
+        try { new Notification('📊 NewsSignal — ' + event.name + ' is LIVE'); } catch (e2) {}
+      }
+    }
+    function handleAutoFlip(statusChanged, curStatus) {
+      const N = state._autoFlip;
+      if (!N) return;
+      if (statusChanged && curStatus === 'live' && !N.active) {
+        N.active = true;
+        N.eventId = N.nextId;
+        N.prevTf = state.chartTf;
+        N.prevType = state.chartType;
+        if (state.chartTf !== '1m' || state.chartType !== 'candle') {
+          state.chartTf = '1m';
+          state.chartType = 'candle';
+          updateChartControls();
+          ensureChartData(state.selected, '1m');
+          savePrefs();
+          showEventToast(`🚨 ${N.nextName} is LIVE — chart flipped to 1m candles`);
+        }
+        return;
+      }
+      if (N.active && curStatus !== 'live' && AUTO_RESTORE) {
+        if (state.chartTf === '1m' && state.chartType === 'candle') {
+          state.chartTf = N.prevTf;
+          state.chartType = N.prevType;
+          updateChartControls();
+          ensureChartData(state.selected, state.chartTf);
+          savePrefs();
+          showEventToast(`✅ ${N.nextName} window closed — restored ${N.prevTf} view`);
+        }
+        N.active = false;
+        N.eventId = null;
+      }
+    }
+
+    // ---------------------------------------------------------------
+    //  State
+    // ---------------------------------------------------------------
+    const prefs = loadPrefs();
+    const state = {
+      selected:'XAUUSD', liveCount:0, sources:{}, quotes:{}, trends:{}, simSeed:1337,
+      chartType: prefs.chartType || 'candle',
+      chartTf: prefs.chartTf || '5m',
+      chartCache:{}, lastNewsAt:0, _lastEvStatus:null, _autoFlip:null
+    };
+    function rand() { state.simSeed = (state.simSeed * 1664525 + 1013904223) % 4294967296; return state.simSeed / 4294967296; }
+    const assetOf = s => ASSETS.find(a => a.sym === s);
+    const fmt = (v, dp) => v.toLocaleString('en-US', { minimumFractionDigits: dp, maximumFractionDigits: dp });
+    function pct(sym) { const q = state.quotes[sym]; if (!q) return 0; return (q.price - q.prevClose) / q.prevClose * 100; }
+    function dirClass(p) {
+      if (p > 0.05) return { txt:'text-emerald-400', bg:'bg-emerald-500/10 border border-emerald-500/30', icon:'trending-up' };
+      if (p < -0.05) return { txt:'text-rose-400', bg:'bg-rose-500/10 border border-rose-500/30', icon:'trending-down' };
+      return { txt:'text-slate-400', bg:'bg-slate-500/10 border border-slate-600/40', icon:'minus' };
+    }
+
+    // ---------------------------------------------------------------
+    //  Status / clock / health
+    // ---------------------------------------------------------------
+    function setStatus(mode, liveCount) {
+      const dot = document.getElementById('statusDot'), ping = document.getElementById('statusPing'), txt = document.getElementById('statusText'), pill = document.getElementById('statusPill');
+      if (mode === 'live') {
+        dot.className = 'relative inline-flex rounded-full h-2 w-2 bg-emerald-400';
+        ping.className = 'absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-60 animate-ping';
+        txt.textContent = `REALTIME · ${liveCount}/${ASSETS.length} feeds`;
+        txt.className = 'text-[11px] font-semibold text-emerald-300';
+        pill.className = 'hidden md:flex items-center gap-2 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-3 py-1';
+      } else if (mode === 'connecting') {
+        dot.className = 'relative inline-flex rounded-full h-2 w-2 bg-amber-400';
+        ping.className = 'absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-60 animate-ping';
+        txt.textContent = 'CONNECTING…';
+        txt.className = 'text-[11px] font-semibold text-amber-300';
+        pill.className = 'hidden md:flex items-center gap-2 rounded-full border border-amber-500/40 bg-amber-500/10 px-3 py-1';
+      } else {
+        dot.className = 'relative inline-flex rounded-full h-2 w-2 bg-slate-400';
+        ping.className = 'absolute inline-flex h-full w-full rounded-full bg-slate-400 opacity-60';
+        txt.textContent = 'FALLBACK · Approx. real levels';
+        txt.className = 'text-[11px] font-semibold text-slate-300';
+        pill.className = 'hidden md:flex items-center gap-2 rounded-full border border-slate-600/50 bg-slate-800/60 px-3 py-1';
+      }
+      document.getElementById('healthTxt').textContent = mode === 'live' ? `${liveCount}/${ASSETS.length} LIVE` : 'SIM';
+    }
+    function updateClock() {
+      const now = new Date();
+      const opts = { timeZone:'Africa/Johannesburg', weekday:'short', month:'short', day:'numeric', hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:false };
+      document.getElementById('liveClock').textContent = now.toLocaleString('en-US', opts) + ' SAST';
+    }
+
+    // ---------------------------------------------------------------
+    //  Synthetic OHLC
+    // ---------------------------------------------------------------
+    function synthSeriesFor(tf, base) {
+      const stepMs = STEP_MS[tf] || 300000;
+      const n = tf === '1m' ? 90 : tf === '5m' ? 120 : tf === '1h' ? 120 : 150;
+      const series = [];
+      let p = base * (1 - 0.004);
+      for (let i = 0; i < n; i++) {
+        p *= 1 + (rand() - 0.5) * 0.0015;
+        const o = p * (1 + (rand() - 0.5) * 0.0005);
+        const c = p * (1 + (rand() - 0.5) * 0.0005);
+        const h = Math.max(o, c) * (1 + rand() * 0.0006);
+        const l = Math.min(o, c) * (1 - rand() * 0.0006);
+        series.push({ t: Date.now() - (n - i) * stepMs, o, h, l, c });
+      }
+      return series;
+    }
+    function synthQuote(a) {
+      const series = synthSeriesFor('1m', a.base);
+      const last = series[series.length - 1];
+      return { price: last.c, prevClose: a.base, open: series[0].o, high: Math.max(...series.map(s => s.h)), low: Math.min(...series.map(s => s.l)), volume: a.vol, series, ts: Date.now(), synth: true };
+    }
+
+    // ---------------------------------------------------------------
+    //  Quotes
+    // ---------------------------------------------------------------
+    async function refreshQuote(sym, attempt = 0) {
+      const a = assetOf(sym);
+      try {
+        const q = await fetchYahoo(a.yahoo, '1d', '1m');
+    q.ts = Date.now();
+        state.quotes[sym] = q;
+        state.sources[sym] = 'LIVE';
+        return true;
+      } catch (e) {
+        if (attempt < 1) return refreshQuote(sym, attempt + 1);
+        state.sources[sym] = 'SIM';
+        state.quotes[sym] = state.quotes[sym] || synthQuote(a);
+        return false;
+      }
+    }
+    let halfIdx = 0, tickN = 0;
+    async function refreshHalf() {
+  if (document.hidden) return;
+      tickN++; const half = ASSETS.filter(a => isHL(a.yahoo) || tickN % 4 === 1);
+      halfIdx = (halfIdx + 1) % 2;
+      const results = await Promise.allSettled(half.map(a => refreshQuote(a.sym)));
+      updateHealth();
+      half.forEach((a, i) => {
+        if (results[i]?.status === 'fulfilled') {
+          updateAssetRow(a.sym);
+          bumpLiveTick(a.sym, state.quotes[a.sym].price);
+        }
+      });
+      buildTicker();
+    }
+    async function refreshAllQuotes() {
+      const results = await Promise.allSettled(ASSETS.map(a => refreshQuote(a.sym)));
+      updateHealth();
+      renderAll();
+    }
+    function updateHealth() {
+      state.liveCount = ASSETS.filter(a => state.sources[a.sym] === 'LIVE').length;
+      if (state.liveCount > 0) setStatus('live', state.liveCount);
+      else setStatus('fallback');
+    }
+
+    // ---------------------------------------------------------------
+    //  Binance WebSocket
+    // ---------------------------------------------------------------
+    let wsRetry = 0;
+    function connectBinanceWS() {
+      try {
+        if (window._binanceWS) { try { window._binanceWS.close(); } catch(e){} }
+        const ws = new WebSocket('wss://stream.binance.com:9443/stream?streams=btcusdt@ticker');
+        window._binanceWS = ws;
+        ws.onopen = () => { wsRetry = 0; };
+        ws.onmessage = (e) => {
+          try {
+            const msg = JSON.parse(e.data);
+            const d = msg.data;
+            if (!d?.s) return;
+            const sym = 'BTC', prev = state.quotes[sym];
+            const q = { price: parseFloat(d.c), prevClose: prev?.prevClose ?? parseFloat(d.o), open: parseFloat(d.o), high: parseFloat(d.h), low: parseFloat(d.l), volume: Math.round(parseFloat(d.q)), series: prev?.series?.length ? prev.series : [], ts: Date.now(), ws: true };
+            state.quotes[sym] = q;
+            state.sources[sym] = 'LIVE';
+            updateAssetRow(sym);
+            bumpLiveTick(sym, q.price);
+            if (state.selected === sym) { renderChart(); renderTrendDetail(); }
+          } catch (err) {}
+        };
+        ws.onclose = () => { window._binanceWS = null; const delay = Math.min(30000, 3000 * Math.pow(2, wsRetry++)); setTimeout(connectBinanceWS, delay); };
+        ws.onerror = () => { try { ws.close(); } catch(e){} };
+      } catch (e) {}
+    }
+
+    function bumpLiveTick(sym, price) {
+      if (sym !== state.selected) return;
+      const key = state.selected + ':' + state.chartTf;
+      const cd = state.chartCache[key];
+      const ageEl = document.getElementById('tickAge');
+      if (ageEl) ageEl.textContent = 'tick ' + new Date().toLocaleTimeString('en-ZA', { timeZone:'Africa/Johannesburg', hour12:false });
+      if (!cd || !cd.series?.length) return;
+      const last = cd.series[cd.series.length - 1];
+      const now = Date.now();
+      const stepMs = STEP_MS[state.chartTf] || 300000;
+      if (now >= last.t + stepMs) {
+        cd.series.push({ t: Math.floor(now / stepMs) * stepMs, o: price, h: price, l: price, c: price });
+        if (cd.series.length > 300) cd.series.shift();
+      } else {
+        last.c = price;
+        last.h = Math.max(last.h, price);
+        last.l = Math.min(last.l, price);
+      }
+      cd.ts = now;
+      if (state.selected === sym) renderChart();
+    }
+
+    // ---------------------------------------------------------------
+    //  TREND ENGINE
+    // ---------------------------------------------------------------
+    function sma(arr, n) { if (arr.length < n) return null; return arr.slice(-n).reduce((a, b) => a + b, 0) / n; }
+    function slopePct(arr, n) { const sub = arr.slice(-n); if (sub.length < 3) return 0; return (sub[sub.length - 1] - sub[0]) / sub[0] * 100 / (sub.length - 1); }
+    function getWeekKey(d) {
+      const date = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+      const dayNum = (date.getUTCDay() + 6) % 7;
+      date.setUTCDate(date.getUTCDate() - dayNum + 3);
+      const firstThursday = new Date(Date.UTC(date.getUTCFullYear(), 0, 4));
+      const firstDayNum = (firstThursday.getUTCDay() + 6) % 7;
+      firstThursday.setUTCDate(firstThursday.getUTCDate() - firstDayNum + 3);
+      const week = 1 + Math.round((date - firstThursday) / (7 * 24 * 3600 * 1000));
+      return date.getUTCFullYear() + '-W' + String(week).padStart(2, '0');
+    }
+    function weeklySeries(daily) {
+      const map = new Map();
+      for (const d of daily) { const key = getWeekKey(new Date(d.t)); if (!map.has(key)) map.set(key, []); map.get(key).push(d.c ?? d.v); }
+      return [...map.entries()].map(([k, vs]) => ({ t: Date.parse(k), c: vs[vs.length - 1] })).sort((a, b) => a.t - b.t);
+    }
+    function makeTrend(values, price) {
+      const fast = sma(values, 20), slow = sma(values, 50), lt = sma(values, 120);
+      const mom5 = slopePct(values, 5), mom20 = slopePct(values, 20);
+      let dir = 'neutral';
+      if (fast && slow) {
+        if (price > fast && fast > slow) dir = 'up';
+        else if (price < fast && fast < slow) dir = 'down';
+        else if (price > fast && fast < slow) dir = 'up';
+        else if (price < fast && fast > slow) dir = 'down';
+      }
+      let score = Math.max(-100, Math.min(100, Math.round(((price - (fast || price)) / (fast || price)) * 300 + mom5 * 12 + mom20 * 4)));
+      if (dir === 'up' && score < 15) score = 15;
+      if (dir === 'down' && score > -15) score = -15;
+      if (dir === 'neutral') score = Math.max(-20, Math.min(20, score));
+      return { dir, score, fast, slow, lt, mom5, mom20 };
+    }
+    function synthDailySeries(a) {
+      const base = a.base, s = [];
+      let p = base * (1 - 0.06);
+      for (let i = 0; i < 126; i++) { p *= 1 + (rand() - 0.48) * 0.008; s.push({ t: Date.now() - (126 - i) * 86400000, c: p }); }
+      return s;
+    }
+    async function refreshTrend(sym) {
+      const a = assetOf(sym);
+      try {
+        const q = await fetchYahoo(a.yahoo, '6mo', '1d');
+        const daily = q.series, weekly = weeklySeries(daily);
+        state.trends[sym] = { daily: makeTrend(daily.map(s => s.c), q.price), weekly: makeTrend(weekly.map(w => w.c), weekly.length ? weekly[weekly.length - 1].c : q.price), weekCount: weekly.length, live: true };
+      } catch (e) {
+        const daily = synthDailySeries(a), weekly = weeklySeries(daily);
+        const last = daily[daily.length - 1].c;
+        state.trends[sym] = { daily: makeTrend(daily.map(s => s.c), last), weekly: makeTrend(weekly.map(w => w.c), weekly.length ? weekly[weekly.length - 1].c : last), weekCount: weekly.length, live: false };
+      }
+    }
+    async function refreshAllTrends() {
+  if (document.hidden && state.trendsReady) return; state.trendsReady = true;
+      await Promise.allSettled(ASSETS.map(a => refreshTrend(a.sym)));
+      renderTrendBoard();
+      renderTrendDetail();
+    }
+    function regimeOf(t) { const d = t.daily.dir, w = t.weekly.dir;
+      if (d === 'up' && w === 'up') return { label:'Bullish', cls:'bg-emerald-500/15 text-emerald-300 border border-emerald-500/40' };
+      if (d === 'down' && w === 'down') return { label:'Bearish', cls:'bg-rose-500/15 text-rose-300 border border-rose-500/40' };
+      return { label:'Mixed', cls:'bg-amber-500/15 text-amber-300 border border-amber-500/40' }; }
+    function trendLabel(t, tf) { const tt = tf === 'daily' ? t.daily : t.weekly;
+      if (tt.dir === 'up') return { text:'Uptrend', cls:'text-emerald-300' };
+      if (tt.dir === 'down') return { text:'Downtrend', cls:'text-rose-300' };
+      return { text:'Sideways', cls:'text-slate-300' }; }
+    function trendBarStyle(score) {
+      const w = Math.abs(score) / 2;
+      const bg = score >= 0 ? 'linear-gradient(to right,#34d399,#10b981)' : 'linear-gradient(to right,#fb7185,#f43f5e)';
+      return `width:${w}%; background:${bg}; transform:${score < 0 ? 'translateX(-100%)' : 'none'};`;
+    }
+    function biasOf(t) {
+      const d = t.daily.dir, w = t.weekly.dir;
+      if (d === 'up' && w === 'up') return { label:'Long dips', cls:'bg-emerald-500/15 text-emerald-300 border border-emerald-500/40', tip:'Strong alignment — buy daily pullbacks in a weekly uptrend.' };
+      if (d === 'down' && w === 'down') return { label:'Short rallies', cls:'bg-rose-500/15 text-rose-300 border border-rose-500/40', tip:'Strong alignment — sell daily strength into a weekly downtrend.' };
+      if (d === 'up' && w === 'down') return { label:'Fade bounces', cls:'bg-amber-500/15 text-amber-300 border border-amber-500/40', tip:'Counter-trend bounce — short into strength while the weekly is down.' };
+      if (d === 'down' && w === 'up') return { label:'Buy pullbacks', cls:'bg-teal-500/15 text-teal-300 border border-teal-500/40', tip:'Pullback inside an uptrend — watch the daily for a reversal before going long.' };
+      if (d === 'up') return { label:'Longs w/ care', cls:'bg-amber-500/15 text-amber-300 border border-amber-500/40', tip:'Weekly is flat — longs only on daily confirmation and reduced size.' };
+      if (d === 'down') return { label:'Shorts w/ care', cls:'bg-amber-500/15 text-amber-300 border border-amber-500/40', tip:'Weekly is flat — shorts only on daily confirmation and reduced size.' };
+      return { label:'No edge', cls:'bg-slate-500/15 text-slate-300 border border-slate-600/40', tip:'Daily and weekly are both flat — stand aside until a direction resolves.' };
+    }
+
+    // ---------------------------------------------------------------
+    //  Renderers
+    // ---------------------------------------------------------------
+    const rowEls = {};
+    function buildAssetList() {
+      const wrap = document.getElementById('assetList');
+      let html = '';
+      ASSETS.forEach(a => {
+        html += `
+        <button data-sym="${a.sym}" class="asset-row w-full flex items-center gap-2.5 px-3 py-2 hover:bg-slate-800/60 transition-colors text-left">
+          <div class="relative w-8 h-8 rounded-lg bg-slate-800/80 flex items-center justify-center shrink-0">
+            <img src="https://cdn.jsdelivr.net/npm/lucide-static@1.44.0/icons/${dirClass(0).icon}.svg" class="w-4 h-4 text-slate-400" alt="">
+            <span class="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full ring-2 ring-slate-900 bg-slate-500" data-dot="${a.sym}"></span>
+          </div>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center justify-between gap-1">
+              <span class="text-[12px] font-bold text-slate-200">${a.sym}</span>
+              <span class="text-[12px] text-slate-300 tabular-nums" data-price="${a.sym}">${fmt(a.base, a.dp)}</span>
+            </div>
+            <div class="flex items-center justify-between gap-1 mt-0.5">
+              <span class="text-[10px] text-slate-500 truncate pr-1">${a.name}</span>
+              <span class="text-[10px] font-semibold tabular-nums" data-pct="${a.sym}">0.00%</span>
+            </div>
+          </div>
+        </button>`;
+      });
+      wrap.innerHTML = html;
+      wrap.querySelectorAll('.asset-row').forEach(btn => {
+        rowEls[btn.dataset.sym] = btn;
+        btn.addEventListener('click', () => selectAsset(btn.dataset.sym));
+      });
+    }
+    function updateAssetRow(sym) {
+      const a = assetOf(sym), q = state.quotes[sym], btn = rowEls[sym];
+      if (!q || !btn) return;
+      const p = pct(sym), d = dirClass(p);
+      btn.querySelector(`[data-price="${sym}"]`).textContent = fmt(q.price, a.dp);
+      const pctEl = btn.querySelector(`[data-pct="${sym}"]`);
+      pctEl.textContent = `${p >= 0 ? '+' : ''}${p.toFixed(2)}%`;
+      pctEl.className = `text-[10px] font-semibold tabular-nums ${d.txt}`;
+      const priceEl = btn.querySelector(`[data-price="${sym}"]`);
+      if (p > 0.05) priceEl.classList.add('text-emerald-300'); else priceEl.classList.remove('text-emerald-300');
+      if (p < -0.05) priceEl.classList.add('text-rose-300'); else priceEl.classList.remove('text-rose-300');
+      const dot = btn.querySelector(`[data-dot="${sym}"]`);
+      dot.className = 'absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full ring-2 ring-slate-900 ' + (state.sources[sym] === 'LIVE' ? 'bg-emerald-400' : 'bg-amber-400');
+    }
+    function buildTicker() {
+      const wrap = document.getElementById('tickerStrip');
+      let html = '';
+      ASSETS.forEach(a => {
+        const q = state.quotes[a.sym], p = q ? pct(a.sym) : 0, d = dirClass(p);
+        html += `<div class="flex items-center gap-1.5 shrink-0">
+          <span class="text-[11px] font-bold text-slate-300">${a.sym}</span>
+          <span class="text-[11px] text-slate-400 tabular-nums">${q ? fmt(q.price, a.dp) : fmt(a.base, a.dp)}</span>
+          <span class="text-[11px] font-semibold ${d.txt} tabular-nums">${q ? (p >= 0 ? '+' : '') + p.toFixed(2) + '%' : '—'}</span>
+        </div>`;
+      });
+      wrap.innerHTML = html;
+    }
+
+    function buildGrid(min, max, span, a, W, H, PL, PR, PT, PB) {
+      let grid = '';
+      [0.25, 0.5, 0.75].forEach(f => {
+        const gy = PT + f * (H - PT - PB);
+        grid += `<line x1="${PL}" y1="${gy}" x2="${W - PR}" y2="${gy}" stroke="#1e293b" stroke-width="1"/>`;
+        grid += `<text x="${W - PR + 6}" y="${gy + 3}" fill="#475569" font-size="9">${fmt(min + f * span, a.dp)}</text>`;
+      });
+      return grid;
+    }
+    function renderChart() {
+      const a = assetOf(state.selected);
+      const key = state.selected + ':' + state.chartTf;
+      const cd = state.chartCache[key];
+      let series = cd && cd.series?.length ? cd.series : null;
+      if (!series) { const q = state.quotes[state.selected]; if (q?.series?.length) series = q.series; }
+      if (!series || !series.length) return;
+
+      const W = 800, H = 280, PL = 12, PR = 60, PT = 16, PB = 20;
+      let min, max;
+      if (state.chartType === 'candle') {
+        min = Math.min(...series.map(s => s.l)); max = Math.max(...series.map(s => s.h));
+      } else {
+        min = Math.min(...series.map(s => s.c)); max = Math.max(...series.map(s => s.c));
+      }
+      const span = (max - min) || 1;
+      const x = i => PL + (i / (series.length - 1)) * (W - PL - PR);
+      const y = v => PT + (1 - (v - min) / span) * (H - PT - PB);
+      const grid = buildGrid(min, max, span, a, W, H, PL, PR, PT, PB);
+      const mi = Math.floor(series.length * 0.62);
+      const marker = `
+        <line x1="${x(mi)}" y1="${PT}" x2="${x(mi)}" y2="${H - PB}" stroke="#fb7185" stroke-width="1.5" stroke-dasharray="4 4"/>
+        <circle cx="${x(mi)}" cy="${y(series[mi].c)}" r="3.5" fill="#fb7185"/>`;
+      let body = '';
+      const lastC = series[series.length - 1].c;
+      if (state.chartType === 'candle') {
+        const step = (W - PL - PR) / (series.length - 1);
+        const bw = Math.max(2, Math.min(10, step * 0.65));
+        series.forEach((s, i) => {
+          const cx = x(i);
+          const up = s.c >= s.o;
+          const color = up ? '#34d399' : '#fb7185';
+          const bodyTop = y(Math.max(s.o, s.c)), bodyBot = y(Math.min(s.o, s.c));
+          const bodyH = Math.max(1, bodyBot - bodyTop);
+          body += `<line x1="${cx}" y1="${y(s.h)}" x2="${cx}" y2="${y(s.l)}" stroke="${color}" stroke-width="1"/>`;
+          body += `<rect x="${cx - bw / 2}" y="${bodyTop}" width="${bw}" height="${bodyH}" rx="1" fill="${up ? color : 'transparent'}" stroke="${color}" stroke-width="${up ? 0 : 1}"/>`;
+        });
+        body += `<circle cx="${x(series.length - 1)}" cy="${y(lastC)}" r="3.5" fill="#fbbf24" stroke="#0f172a" stroke-width="1.5"/>`;
+      } else {
+        let line = '', area = '';
+        series.forEach((s, i) => {
+          const cx = x(i), cy = y(s.c);
+          line += (i === 0 ? `M${cx},${cy}` : `L${cx},${cy}`);
+          area += (i === 0 ? `M${cx},${cy}` : `L${cx},${cy}`);
+        });
+        area += `L${x(series.length - 1)},${H - PB}L${x(0)},${H - PB}Z`;
+        body = `<path d="${area}" fill="url(#areaGrad)"/>
+          <path d="${line}" fill="none" stroke="url(#lineGrad)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+          <circle cx="${x(series.length - 1)}" cy="${y(lastC)}" r="4" fill="#fbbf24" stroke="#0f172a" stroke-width="2"/>`;
+      }
+      document.getElementById('mainChart').innerHTML = `
+        <defs>
+          <linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#f59e0b" stop-opacity="0.35"/>
+            <stop offset="100%" stop-color="#f59e0b" stop-opacity="0"/>
+          </linearGradient>
+          <linearGradient id="lineGrad" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0%" stop-color="#f59e0b"/>
+            <stop offset="100%" stop-color="#fbbf24"/>
+          </linearGradient>
+        </defs>
+        ${grid}
+        ${body}
+        ${marker}`;
+
+      const q = state.quotes[state.selected];
+      const price = q ? q.price : lastC;
+      const p = q ? pct(state.selected) : 0;
+      const d = dirClass(p);
+      document.getElementById('chartSym').textContent = a.sym;
+      document.getElementById('chartName').textContent = a.name;
+      document.getElementById('chartPrice').textContent = fmt(price, a.dp);
+      const pc = document.getElementById('chartPct');
+      pc.textContent = `${p >= 0 ? '+' : ''}${p.toFixed(2)}%`;
+      pc.className = `text-[13px] font-bold rounded-md px-1.5 py-0.5 tabular-nums ${d.txt} ${d.bg}`;
+      document.getElementById('statOpen').textContent = fmt(series[0].o, a.dp);
+      document.getElementById('statHigh').textContent = fmt(Math.max(...series.map(s => s.h)), a.dp);
+      document.getElementById('statLow').textContent = fmt(Math.min(...series.map(s => s.l)), a.dp);
+      document.getElementById('statVol').textContent = (q?.volume || a.vol).toLocaleString('en-US');
+      const src = document.getElementById('chartSrc');
+      const isLive = state.sources[state.selected] === 'LIVE';
+      src.textContent = isLive ? (q?.ws ? 'WS LIVE' : 'LIVE') : 'SIM';
+      src.className = 'text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ' + (isLive ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30' : 'bg-slate-800 text-slate-400 border border-slate-700');
+      document.getElementById('chartUpdated').textContent = 'Updated ' + new Date(q?.ts || Date.now()).toLocaleTimeString('en-ZA', { timeZone:'Africa/Johannesburg', hour12:false }) + ' · ' + state.chartTf;
+    }
+
+    async function loadChartData(sym, tf) {
+      const a = assetOf(sym);
+      const cfg = TF_MAP[tf] || TF_MAP['5m'];
+      const key = sym + ':' + tf;
+      try {
+        const y = await fetchYahoo(a.yahoo, cfg.range, cfg.interval);
+        const series = y.series.map(s => ({ t: s.t, o: s.o, h: s.h, l: s.l, c: s.c }));
+        if (!series.length) throw new Error('empty');
+        state.chartCache[key] = { sym, tf, series, ts: Date.now() };
+        if (sym === state.selected) renderChart();
+      } catch (e) {
+        const base = state.quotes[sym]?.price || a.base;
+        if (!state.chartCache[key]) state.chartCache[key] = { sym, tf, series: synthSeriesFor(tf, base), ts: Date.now() };
+        if (sym === state.selected) renderChart();
+      }
+    }
+    function ensureChartData(sym, tf) {
+      const key = sym + ':' + tf;
+      const q = state.quotes[sym];
+      if (!state.chartCache[key]) {
+        state.chartCache[key] = { sym, tf, series: q?.series?.length ? q.series : synthSeriesFor(tf, assetOf(sym).base), ts: q?.ts || Date.now() };
+      }
+      renderChart();
+      loadChartData(sym, tf);
+    }
+    function updateChartControls() {
+      const candle = document.getElementById('btnCandle'), line = document.getElementById('btnLine');
+      candle.className = 'text-[11px] font-semibold px-2 py-1 rounded-md ' + (state.chartType === 'candle' ? 'bg-slate-800 text-slate-200' : 'text-slate-400 hover:bg-slate-800/60 transition-colors');
+      line.className = 'text-[11px] font-semibold px-2 py-1 rounded-md ' + (state.chartType === 'line' ? 'bg-slate-800 text-slate-200' : 'text-slate-400 hover:bg-slate-800/60 transition-colors');
+      const tfBtns = { '1m':'tf1m', '5m':'tf5m', '1h':'tf1h', '1D':'tf1D' };
+      Object.entries(tfBtns).forEach(([tf, id]) => {
+        const el = document.getElementById(id);
+        el.className = 'text-[11px] font-semibold px-2 py-1 rounded-md ' + (state.chartTf === tf ? 'bg-slate-800 text-slate-200' : 'text-slate-400 hover:bg-slate-800/60 transition-colors');
+      });
+    }
+    function selectAsset(sym) {
+      state.selected = sym;
+      Object.values(rowEls).forEach(b => {
+        const active = b.dataset.sym === sym;
+        b.classList.toggle('bg-slate-800', active);
+        b.classList.toggle('ring-1', active);
+        b.classList.toggle('ring-amber-500/40', active);
+      });
+      renderSignalDetail(); renderTrendDetail();
+      ensureChartData(sym, state.chartTf);
+    }
+    function renderAll() { ASSETS.forEach(a => updateAssetRow(a.sym)); buildTicker(); renderChart(); }
+
+    // ---------------------------------------------------------------
+    //  Signal board + detail
+    // ---------------------------------------------------------------
+    function signalMeta(score) {
+      if (score >= 80) return { label:'Strong Bullish', color:'text-emerald-300', bar:'bg-emerald-400', badge:'bg-emerald-500/15 text-emerald-300 border border-emerald-500/40' };
+      if (score >= 40) return { label:'Bullish', color:'text-emerald-400', bar:'bg-emerald-400', badge:'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30' };
+      if (score > -40) return { label:'Neutral', color:'text-slate-300', bar:'bg-slate-400', badge:'bg-slate-500/10 text-slate-300 border border-slate-600/40' };
+      if (score > -80) return { label:'Bearish', color:'text-rose-400', bar:'bg-rose-400', badge:'bg-rose-500/10 text-rose-400 border border-rose-500/30' };
+      return { label:'Strong Bearish', color:'text-rose-300', bar:'bg-rose-400', badge:'bg-rose-500/15 text-rose-300 border border-rose-500/40' };
+    }
+    function renderSignalBoard() {
+      const wrap = document.getElementById('signalBoard');
+      let html = '';
+      ASSETS.forEach(a => {
+        const s = SIGNAL_CFG[a.sym], m = signalMeta(s.score), barW = Math.abs(s.score);
+        html += `
+          <div class="px-4 py-2.5 flex items-center gap-3 hover:bg-slate-800/40 transition-colors cursor-pointer" data-sym="${a.sym}">
+            <span class="w-9 text-[12px] font-extrabold text-slate-200">${a.sym}</span>
+            <div class="flex-1">
+              <div class="flex items-center justify-between mb-1">
+                <span class="text-[11px] font-semibold ${m.color}">${m.label}</span>
+                <span class="text-[11px] font-bold text-slate-300 tabular-nums">${s.score > 0 ? '+' : ''}${s.score}</span>
+              </div>
+              <div class="relative h-1.5 rounded-full bg-slate-800 overflow-hidden">
+                <div class="absolute inset-y-0 left-1/2 w-px bg-slate-600"></div>
+                <div class="absolute inset-y-0 left-1/2 ${m.bar} rounded-full transition-all duration-700" style="width:${barW / 2}%; ${s.score < 0 ? 'transform:translateX(-100%);' : ''}"></div>
+              </div>
+            </div>
+            <span class="text-[10px] text-slate-500 w-9 text-right tabular-nums">${s.conf}%</span>
+          </div>`;
+      });
+      wrap.innerHTML = html;
+      wrap.querySelectorAll('[data-sym]').forEach(el => el.addEventListener('click', () => selectAsset(el.dataset.sym)));
+      document.getElementById('signalCount').textContent = ASSETS.filter(a => Math.abs(SIGNAL_CFG[a.sym].score) >= 40).length + ' active';
+    }
+    function renderSignalDetail() {
+      try { renderInterp(); renderCurrency(); } catch (e) {}
+      const s = SIGNAL_CFG[state.selected], m = signalMeta(s.score), a = assetOf(state.selected);
+      document.getElementById('sigSym').textContent = a.sym;
+      const badge = document.getElementById('sigBadge');
+      badge.textContent = m.label;
+      badge.className = `text-[11px] font-bold px-2 py-1 rounded-md ${m.badge}`;
+      document.getElementById('sigScore').textContent = (s.score > 0 ? '+' : '') + s.score;
+      const bar = document.getElementById('sigBar');
+      bar.style.width = Math.abs(s.score) / 2 + '%';
+      bar.style.background = s.score >= 0 ? 'linear-gradient(to right,#34d399,#10b981)' : 'linear-gradient(to right,#fb7185,#f43f5e)';
+      bar.style.transform = s.score < 0 ? 'translateX(-100%)' : 'none';
+      document.getElementById('sigConf').style.width = s.conf + '%';
+      document.getElementById('sigConfTxt').textContent = s.conf + '%';
+      document.getElementById('sigPlan').innerHTML = s.plan.map((p, i) => {
+        const label = ['Entry','Stop','Target'][i];
+        const tone = i === 1 ? 'text-rose-300' : i === 2 ? 'text-emerald-300' : 'text-slate-200';
+        return `<div class="flex items-center justify-between"><span class="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">${label}</span><span class="font-bold ${tone} tabular-nums">${p}</span></div>`;
+      }).join('');
+      document.getElementById('sigReason').textContent = s.reason;
+    }
+
+    // ---------------------------------------------------------------
+    //  Trend rendering
+    // ---------------------------------------------------------------
+    function renderTrendDetail() {
+      const a = assetOf(state.selected), t = state.trends[state.selected];
+      document.getElementById('trendSym').textContent = a.sym;
+      if (!t) return;
+      const dl = trendLabel(t, 'daily'), wl = trendLabel(t, 'weekly'), rg = regimeOf(t);
+      const dLabel = document.getElementById('dailyTrendLabel');
+      dLabel.textContent = dl.text; dLabel.className = 'text-[11px] font-bold ' + dl.cls;
+      document.getElementById('dailyTrendBar').style.cssText = trendBarStyle(t.daily.score);
+      document.getElementById('dailyTrendStats').innerHTML = `
+        <div><span class="block text-slate-500">SMA20</span><span class="font-semibold text-slate-200 tabular-nums">${t.daily.fast ? fmt(t.daily.fast, a.dp) : '—'}</span></div>
+        <div><span class="block text-slate-500">SMA50</span><span class="font-semibold text-slate-200 tabular-nums">${t.daily.slow ? fmt(t.daily.slow, a.dp) : '—'}</span></div>
+        <div><span class="block text-slate-500">5d mom</span><span class="font-semibold ${t.daily.mom5 >= 0 ? 'text-emerald-300' : 'text-rose-300'} tabular-nums">${t.daily.mom5 >= 0 ? '+' : ''}${t.daily.mom5.toFixed(2)}%</span></div>`;
+      const wLabel = document.getElementById('weeklyTrendLabel');
+      wLabel.textContent = wl.text; wLabel.className = 'text-[11px] font-bold ' + wl.cls;
+      document.getElementById('weeklyTrendBar').style.cssText = trendBarStyle(t.weekly.score);
+      document.getElementById('weeklyTrendStats').innerHTML = `
+        <div><span class="block text-slate-500">Weeks</span><span class="font-semibold text-slate-200 tabular-nums">${t.weekCount}</span></div>
+        <div><span class="block text-slate-500">SMA10W</span><span class="font-semibold text-slate-200 tabular-nums">${t.weekly.fast ? fmt(t.weekly.fast, a.dp) : '—'}</span></div>`;
+      const chip = document.getElementById('regimeChip');
+      chip.textContent = rg.label + ' regime';
+      chip.className = 'text-[11px] font-bold px-2 py-1 rounded-md ' + rg.cls;
+      const q = state.quotes[state.selected];
+      const ltPct = t.daily.lt && q ? (q.price - t.daily.lt) / t.daily.lt * 100 : null;
+      document.getElementById('trendReason').innerHTML =
+        `<b class="text-slate-400">Interpretation:</b> ` +
+        `Daily momentum is <b class="${dl.cls}">${dl.text.toLowerCase()}</b> (score ${t.daily.score}) while the weekly picture is ` +
+        `<b class="${wl.cls}">${wl.text.toLowerCase()}</b> (score ${t.weekly.score}). ` +
+        (ltPct != null ? `Price sits <b class="${ltPct >= 0 ? 'text-emerald-300' : 'text-rose-300'}">${ltPct >= 0 ? '+' : ''}${ltPct.toFixed(1)}%</b> vs the 120-session average — ` + (ltPct >= 0 ? 'a constructive long-term structure.' : 'a weakened long-term structure.') : 'Long-term average not yet established.') +
+        ` Trend data is ${t.live ? 'computed from live 6-month daily prices.' : 'synthetic (offline fallback).'}`;
+    }
+    function renderTrendBoard() {
+      const wrap = document.getElementById('trendBoard');
+      let html = '';
+      ASSETS.forEach(a => {
+        const t = state.trends[a.sym];
+        if (!t) return;
+        const rg = regimeOf(t), bias = biasOf(t);
+        const up = '<span class="text-emerald-400 text-[13px] leading-none">▲</span>';
+        const down = '<span class="text-rose-400 text-[13px] leading-none">▼</span>';
+        const flat = '<span class="text-slate-500 text-[13px] leading-none">—</span>';
+        const dArrow = t.daily.dir === 'up' ? up : t.daily.dir === 'down' ? down : flat;
+        const wArrow = t.weekly.dir === 'up' ? up : t.weekly.dir === 'down' ? down : flat;
+        const ltArrow = t.daily.lt != null ? (state.quotes[a.sym] && state.quotes[a.sym].price > t.daily.lt ? up : down) : flat;
+        html += `
+          <div class="grid grid-cols-[40px_1fr_1fr_1fr_46px_88px] items-center gap-x-1 px-3 py-2.5 hover:bg-slate-800/40 transition-colors cursor-pointer" data-sym="${a.sym}">
+            <span class="text-[12px] font-extrabold text-slate-200">${a.sym}</span>
+            <span class="text-center">${dArrow}</span>
+            <span class="text-center">${wArrow}</span>
+            <span class="text-center">${ltArrow}</span>
+            <span class="justify-self-end text-[9px] font-bold px-1.5 py-0.5 rounded ${rg.cls}">${rg.label}</span>
+            <span class="justify-self-end text-[9px] font-bold px-1.5 py-0.5 rounded ${bias.cls} text-center" title="${bias.tip}">${bias.label}</span>
+          </div>`;
+      });
+      wrap.innerHTML = html;
+      wrap.querySelectorAll('[data-sym]').forEach(el => el.addEventListener('click', () => selectAsset(el.dataset.sym)));
+    }
+
+    // ---------------------------------------------------------------
+    //  LIVE NEWS (30s cadence)
+    // ---------------------------------------------------------------
+    const NEWS_QUERIES = ['gold+price', 'federal+reserve', 'nasdaq+100', 'treasury+yields+inflation'];
+    const NEWS_FEEDS = ['https://feeds.bbci.co.uk/news/business/rss.xml', ...NEWS_QUERIES.map(q => `https://news.google.com/rss/search?q=${q}&hl=en-US&gl=US&ceid=US:en`)];
+    const seenTitles = new Set();
+    let newsLive = false;
+    const IMP_RE = [[5, /\b(fomc|fed|federal reserve|powell|cpi|ppi|pce|nonfarm|non-farm|payrolls?|nfp|inflation|rate decision|rate (cut|hike)s?|jobs report|unemployment|jackson hole)\b/], [4, /\b(rba|ecb|boe|boj|opec|tariffs?|gdp|treasury|yields?|bonds?|earnings|ism|retail sales|jobless|debt ceiling|shutdown)\b/], [3, /\b(ai|chip|semiconductor|gold|dollar|nasdaq|oil|crude|china|bitcoin)\b/], [2, /\b(housing|sentiment|retail|stocks?)\b/]];
+    const KW_ASSETS = {
+      XAUUSD:['gold','bullion','safe-haven','safe haven'], NAS100:['nasdaq','tech','nvidia','chip','semiconductor','apple','microsoft','earnings','wall street'],
+      DXY:['dollar','dxy','greenback','yields','treasury'], EURUSD:['euro','ecb','eurozone','lagarde'], GBPUSD:['pound','sterling','boe','bank of england'],
+      USDJPY:['yen','boj','bank of japan'], AUDUSD:['aussie','australia','rba','china','iron ore','commodit'] };
+    function classifyNews(title) {
+      const t = title.toLowerCase(); let imp = 2, impacts = [];
+      for (const [lv, re] of IMP_RE) if (re.test(t)) { imp = lv; break; }
+      for (const [sym, words] of Object.entries(KW_ASSETS)) if (words.some(w => t.includes(w))) impacts.push(sym);
+      if (imp >= 5) impacts = [...new Set([...impacts, 'DXY', 'XAUUSD', 'NAS100'])];
+      impacts = impacts.filter(s => assetOf(s)); if (!impacts.length) impacts = ['NAS100', 'XAUUSD'];
+      let type = 'post';
+      if (/(breaking|emergency|just in|developing)/.test(t)) type = 'breaking';
+      else if (/(expected|forecast|due|upcoming|consensus|calendar|to be released|preview)/.test(t)) type = 'pre';
+      return { imp, impacts: impacts.slice(0, 4), type };
+    }
+    const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' })[c]);
+    function addNewsItem(item) {
+      const feed = document.getElementById('newsFeed');
+      const b = item.type === 'breaking' ? { txt:'BREAKING', cls:'bg-rose-500/15 text-rose-300 border border-rose-500/40' }
+            : item.type === 'pre' ? { txt:'PRE-ALERT', cls:'bg-amber-500/15 text-amber-300 border border-amber-500/40' }
+            : { txt:'NEWS', cls:'bg-sky-500/15 text-sky-300 border border-sky-500/40' };
+      const stars = '★'.repeat(item.imp) + '☆'.repeat(5 - item.imp);
+      const el = document.createElement('div');
+      el.className = 'news-item px-4 py-3 opacity-0 -translate-x-2 transition-all duration-500';
+      el.innerHTML = `
+        <div class="flex items-center justify-between gap-2 mb-1.5">
+          <span class="text-[10px] font-bold px-1.5 py-0.5 rounded ${b.cls}">${b.txt}</span>
+          <span class="text-[10px] text-slate-500 font-medium">${item.age || 'just now'} · ${new Date(item.ts || Date.now()).toLocaleTimeString('en-ZA', { timeZone:'Africa/Johannesburg', hour:'2-digit', minute:'2-digit', hour12:false })} SAST</span>
+        </div>
+        <div class="flex items-center gap-1.5 mb-1">
+          <span class="text-[11px] font-semibold text-slate-200">${esc(item.src)}</span>
+          <span class="text-[10px] text-amber-400 tracking-tight">${stars}</span>
+        </div>
+        <a ${/^https?:\/\//.test(item.link || '') ? `href="${esc(item.link)}" target="_blank" rel="noopener"` : ''} class="block text-[12px] text-slate-300 leading-snug hover:text-white">${esc(item.title)}</a>
+        <div class="flex items-center gap-1 mt-1.5 flex-wrap">
+          ${item.impacts.map(s => `<span class="text-[10px] font-bold text-slate-400 bg-slate-800 rounded px-1.5 py-0.5">${s}</span>`).join('')}
+        </div>`;
+      feed.prepend(el);
+      requestAnimationFrame(() => el.classList.remove('opacity-0', '-translate-x-2'));
+      while (feed.children.length > 50) feed.lastChild.remove();
+    }
+    state.newsItems = [];
+    async function refreshNews() {
+      if (document.hidden && state.newsItems.length) return;
+      state.lastNewsAt = Date.now();
+      const ageEl = document.getElementById('newsAge'), feed = document.getElementById('newsFeed');
+      try {
+        let j; try { j = await callApi('/news', 20000); } catch (e) { if (state.newsItems.length && Date.now() - (state.fbNewsAt || 0) < 60000) return; state.fbNewsAt = Date.now(); j = await newsFallback(); }
+        for (const it of [...j.items].reverse()) {
+          const key = it.title.toLowerCase().replace(/\s+/g, ' ');
+          if (seenTitles.has(key)) continue;
+          seenTitles.add(key); if (seenTitles.size > 800) seenTitles.delete(seenTitles.values().next().value);
+          const item = { title: it.title, src: it.src, ts: it.ts, link: it.link, ...classifyNews(it.title) };
+          state.newsItems.push(item); addNewsItem({ ...item, age: timeAgo(it.ts) });
+        }
+        if (state.newsItems.length > 400) state.newsItems.splice(0, state.newsItems.length - 400);
+        if (ageEl) { ageEl.textContent = `${j.ok}/${j.total} feeds${j.fb ? ' (backup)' : ''} · ${new Date().toLocaleTimeString('en-ZA', { timeZone:'Africa/Johannesburg', hour12:false })}`; ageEl.className = 'text-[9px] text-emerald-400 font-bold'; }
+        newsLive = true;
+        document.getElementById('newsLiveDot').innerHTML = '<span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-60"></span><span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-400"></span>';
+      } catch (e) {
+        if (ageEl) { ageEl.textContent = 'OFFLINE · ' + String(e.message || e).slice(0, 40); ageEl.className = 'text-[9px] text-rose-400 font-bold'; }
+        if (feed && !state.newsItems.length) feed.innerHTML = '<div class="p-4 text-[11px] text-rose-300">News feed unavailable. It needs the site to be deployed with _worker.js (Cloudflare Pages), not opened as a local file. Retrying every 20s.</div>';
+      }
+    }
+    
+    function timeAgo(ts) {
+      const s = Math.floor((Date.now() - ts) / 1000);
+      if (s < 5) return 'just now';
+      if (s < 60) return s + 's ago';
+      const m = Math.floor(s / 60);
+      if (m < 60) return m + 'm ago';
+      const h = Math.floor(m / 60);
+      if (h < 24) return h + 'h ago';
+      return Math.floor(h / 24) + 'd ago';
+    }
+    
+    // ---------------------------------------------------------------
+    //  HIGH-IMPACT CALENDAR — rendering + bias matrix
+    // ---------------------------------------------------------------
+    
+// ---------------- SAST helpers + high-impact calendar ----------------
+const SAST_FMT = new Intl.DateTimeFormat('en-ZA', { timeZone:'Africa/Johannesburg', weekday:'short', day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit', hour12:false });
+const sast = ms => SAST_FMT.format(new Date(ms)).replace(/,/g, '') + ' SAST';
+const MK = ['DXY','XAUUSD','NAS100','EURUSD','GBPUSD','USDJPY','AUDUSD'];
+const MKL = { DXY:'DXY', XAUUSD:'XAU', NAS100:'NAS', EURUSD:'EUR', GBPUSD:'GBP', USDJPY:'JPY', AUDUSD:'AUD' };
+const dArrow = v => v === 'up' ? '▲' : v === 'down' ? '▼' : '—';
+const dCol = v => v === 'up' ? 'text-emerald-400' : v === 'down' ? 'text-rose-400' : 'text-slate-500';
+let calFilter = 'ALL';
+function setCalFilter(c) { calFilter = c; renderEvents(); }
+function eventDirs(t, c) {
+  const x = t.toLowerCase(); let kind = 'other';
+  if (/cpi|ppi|pce|price index|inflation|deflator|employment cost|hourly earnings|wage/.test(x)) kind = 'infl';
+  else if (/fomc|federal funds|interest rate|cash rate|bank rate|rate statement|rate decision|monetary policy|policy rate|fed chair|powell|governor|speaks|minutes|testif|press conference/.test(x)) kind = 'policy';
+  else if (/non-farm|nonfarm|payroll|unemployment|jobless|adp|jolts|employment|claimant|jobs/.test(x)) kind = 'jobs';
+  else if (/gdp|retail|ism|pmi|confidence|sentiment|durable|housing|production|trade balance|consumer|ifo|zew|business/.test(x)) kind = 'growth';
+  const m = {}; MK.forEach(k => m[k] = 'flat'); let note = 'No reliable directional rule; trade the surprise vs forecast.', focus = [];
+  if (c === 'USD') {
+    if (kind !== 'other') { Object.assign(m, { DXY:'up', EURUSD:'down', GBPUSD:'down', AUDUSD:'down', USDJPY:'up', XAUUSD:'down', NAS100: kind === 'growth' ? 'up' : 'down' }); }
+    focus = ['DXY','XAUUSD','NAS100','EURUSD','AUDUSD','USDJPY','GBPUSD'];
+    note = ({ infl:'Hotter than forecast = hawkish: USD and yields up, gold and tech down, EUR/GBP/AUD down.', policy:'Hawkish tone = USD and yields up, gold and Nasdaq down. Dovish flips it.', jobs:'Strong jobs = USD and yields up, gold down, Nasdaq pressured on rate fears. Weak jobs flips it.', growth:'Strong growth = USD and risk assets up, gold softer, AUD mixed (risk-on helps, USD hurts).' })[kind] || note;
+  } else {
+    const pair = ({ EUR:['EURUSD','up'], GBP:['GBPUSD','up'], AUD:['AUDUSD','up'], NZD:['AUDUSD','up'], CNY:['AUDUSD','up'], JPY:['USDJPY','down'] })[c];
+    if (pair && kind !== 'other') { m[pair[0]] = pair[1]; if (['EUR','GBP','JPY'].includes(c)) m.DXY = 'down'; if (c !== 'CNY') m.XAUUSD = 'up'; else m.NAS100 = 'up'; }
+    focus = pair ? [pair[0], 'DXY'] : [];
+    note = pair ? `${c} data: stronger or more hawkish than forecast lifts the ${c} (${pair[0]} ${pair[1] === 'up' ? 'up' : 'down'}); weaker flips it.${c === 'AUD' || c === 'CNY' ? ' AUD also trades as a China and global-risk proxy.' : ''}` : `${c} event: little direct effect on your pairs unless the surprise is large.`;
+  }
+  return { m, note, focus };
+}
+let calStatus = 'loading';
+async function loadCalendar() {
+  if (document.hidden && calStatus === 'live') return;
+  try {
+    const rows = await callApi('/calendar').catch(() => calFallback());
+    const out = rows.map((r, i) => { const when = Date.parse(r.date), dd = eventDirs(r.title, r.country);
+      return { id:'c' + i + '_' + when, name:r.title, country:r.country, when, imp:r.impact === 'High' ? 5 : 4, consensus:r.forecast || '—', prev:r.previous || '—', m:dd.m, note:dd.note, focus:dd.focus }; })
+      .filter(e => !isNaN(e.when)).sort((a, b) => a.when - b.when);
+    if (!out.length) throw new Error('empty');
+    EVENTS = out; calStatus = 'live';
+  } catch (e) { calStatus = 'fallback'; }
+  renderEvents();
+}
+const evM = e => e.m || eventDirs(e.name, e.country || 'USD').m;
+const SAST_DAY = new Intl.DateTimeFormat('en-ZA', { timeZone:'Africa/Johannesburg', weekday:'long', day:'2-digit', month:'long' });
+function matrixHtml(m) { return `<div class="grid grid-cols-7 gap-1 text-center text-[12px] font-extrabold">${MK.map(k => `<div class="rounded bg-slate-950/60 border border-slate-800 py-1"><span class="text-[8px] text-slate-500 block">${MKL[k]}</span><span class="${dCol(m[k])}">${dArrow(m[k])}</span></div>`).join('')}</div>`; }
+function renderEvents() {
+  const wrap = document.getElementById('eventList'), now = Date.now();
+  const all = EVENTS.filter(e => e.when > now - 26 * 3600000);
+  const list = all.filter(e => calFilter === 'ALL' || (e.country || 'USD') === calFilter);
+  const next = EVENTS.filter(e => e.when > now).sort((a, b) => a.when - b.when)[0];
+  const cur = ['ALL','USD','AUD','EUR','GBP','JPY','CAD','CHF','NZD','CNY'];
+  const chips = cur.map(c => `<button onclick="setCalFilter('${c}')" class="text-[9px] font-bold px-1.5 py-0.5 rounded ${calFilter === c ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40' : 'bg-slate-800 text-slate-400 border border-slate-700'}">${c}</button>`).join(' ');
+  const stat = calStatus === 'live' ? `Live from ForexFactory: all red-folder events + key USD data (PPI, PCE, ISM, claims…), this and next week, refreshed every minute. Times in SAST. ${list.length} shown.` : calStatus === 'loading' ? 'Loading calendar…' : 'Live calendar unavailable (needs the site deployed with _worker.js). Showing a short static list.';
+  let lastDay = '', html = '';
+  for (const e of list) {
+    const s = eventStatus(e, now), m = evM(e), day = SAST_DAY.format(new Date(e.when));
+    if (day !== lastDay) { lastDay = day; html += `<div class="px-4 py-1.5 bg-slate-800/60 text-[10px] font-bold uppercase tracking-wider text-slate-300">${day}</div>`; }
+    const chip = s === 'live' ? ['LIVE','bg-rose-500/15 text-rose-300 border border-rose-500/40'] : s === 'done' ? ['DONE','bg-slate-500/15 text-slate-400 border border-slate-600/40'] : (next && e.id === next.id) ? ['NEXT','bg-emerald-500/15 text-emerald-300 border border-emerald-500/40'] : ['UPCOMING','bg-sky-500/15 text-sky-300 border border-sky-500/40'];
+    html += `<div class="px-4 py-3 ${next && e.id === next.id ? 'bg-emerald-500/5' : ''}">
+      <div class="flex items-center justify-between gap-2 mb-1"><span class="text-[11px] font-bold text-slate-200 truncate"><span class="text-amber-300">${esc(e.country || 'USD')}</span> · ${esc(e.name)}</span><span class="text-[9px] font-bold px-1.5 py-0.5 rounded ${chip[1]}">${chip[0]}</span></div>
+      <div class="text-[10px] text-slate-400 font-semibold mb-1">${sast(e.when)} <span class="text-rose-400/80">${'★'.repeat(e.imp)}${'☆'.repeat(5 - e.imp)}</span></div>
+      <div class="flex items-center gap-3 text-[10px] mb-1.5"><span class="text-slate-500">Forecast <b class="text-slate-300">${esc(e.consensus)}</b></span><span class="text-slate-600">|</span><span class="text-slate-500">Prior <b class="text-slate-300">${esc(e.prev)}</b></span></div>
+      ${matrixHtml(m)}
+      <p class="text-[9px] text-slate-500 mt-1.5 leading-relaxed">${e.focus && e.focus.length ? '<b class="text-slate-400">Focus:</b> ' + e.focus.join(', ') + '. ' : ''}${esc(e.note || '')}</p></div>`;
+  }
+  if (!list.length) html = '<div class="p-4 text-[11px] text-slate-500">No events for this filter.</div>';
+  const full = `<div class="px-4 py-2 text-[9px] text-slate-500">${stat}<div class="mt-1.5 flex flex-wrap gap-1">${chips}</div></div>` + html;
+  if (wrap._h !== full) { const st = wrap.scrollTop; wrap._h = full; wrap.innerHTML = full; wrap.scrollTop = st; }
+}
+    function renderBiasMatrix(next) {
+      const grid = document.getElementById('evBiasGrid'), note = document.getElementById('evBiasNote');
+      if (!next) { grid.innerHTML = ''; note.textContent = 'No upcoming red-folder events.'; return; }
+      grid.innerHTML = MK.map(k => { const v = evM(next)[k]; return `<div class="rounded-lg bg-slate-900 border border-slate-800 py-2"><div class="text-[8px] text-slate-500 font-semibold">${MKL[k]}</div><div class="text-[16px] font-extrabold ${dCol(v)}">${dArrow(v)}</div></div>`; }).join('');
+      note.innerHTML = `<b class="text-slate-300">${esc((next.country || 'USD') + ' · ' + next.name)}</b> · ${sast(next.when)}. ${esc(next.note || '')} Arrows = reaction if the actual beats forecast; flip them on a miss.`;
+    }
+// ---------------- COT tab ----------------
+const COT_SYMS = ['XAUUSD','NAS100','DXY','EURUSD','GBPUSD','USDJPY','AUDUSD'];
+let cotData = null, cotErr = null;
+function nextCotRelease() {
+  const f = new Intl.DateTimeFormat('en-US', { timeZone:'America/New_York', hour:'2-digit', minute:'2-digit', hour12:false }), now = Date.now();
+  for (let i = 0; i < 9; i++) { const b = new Date(now + i * 864e5), day = Date.UTC(b.getUTCFullYear(), b.getUTCMonth(), b.getUTCDate());
+    for (const h of [19, 20]) { const c = new Date(day + h * 36e5 + 30 * 6e4); if (c.getUTCDay() === 5 && f.format(c).replace(/^24/, '00') === '15:30' && c.getTime() > now) return c.getTime(); } }
+  return null;
+}
+function cotStats(rows) {
+  const net = rows.map(r => r.l - r.s), n = net.length, L = net[n - 1], sorted = [...net].sort((a, b) => a - b), last = rows[n - 1];
+  const q = p => sorted[Math.min(n - 1, Math.floor(p * (n - 1)))];
+  return { net, L, n, pctl: Math.round(sorted.filter(v => v <= L).length / n * 100), p10: q(.1), p90: q(.9), d1: L - net[Math.max(0, n - 2)], d4: L - net[Math.max(0, n - 5)], oiPct: L / last.oi * 100, sec: last.l2 - last.s2, date: last.d };
+}
+const COT_CROSS = {
+  XAUUSD: 'Funds heavily long gold while USD positioning also turns long = headwind. Funds short gold while DXY fails = squeeze risk.',
+  NAS100: 'Leveraged funds net short while price rises = squeeze fuel. Asset managers staying long = structural support under dips.',
+  DXY: 'Crowded long USD: short-covering rallies in EURUSD, AUDUSD and gold. Crowded short USD: sharp USD bounces on hawkish Fed or strong data.',
+  EURUSD: 'Crowded long EUR leaves EURUSD vulnerable to a dollar bounce; crowded short EUR makes a squeeze higher on soft US data more likely.',
+  GBPUSD: 'Crowded long GBP plus a weak UK data surprise = fast unwinds; watch BoE speakers and UK CPI/jobs.',
+  USDJPY: 'COT is for yen futures, shown inverted. Crowded yen shorts (USDJPY long) can unwind violently on a BoJ surprise or risk-off.',
+  AUDUSD: 'AUD positioning swings with China data and global risk. Crowded long AUD plus weak Chinese data = reversal risk.',
+};
+function cotOutlook(sym, m, inv) {
+  const t = state.trends[sym]; let s = 0; const why = [];
+  if (m.pctl >= 90) { s -= 40; why.push('speculators are crowded long (reversal risk)'); } else if (m.pctl <= 10) { s += 40; why.push('speculators are crowded short (squeeze risk)'); }
+  if (m.d4 > 0 && m.d1 > 0) { s += 20; why.push('net positioning rising for weeks'); } else if (m.d4 < 0 && m.d1 < 0) { s -= 20; why.push('net positioning falling for weeks'); }
+  if (inv) s = -s;
+  if (t && t.live) { const a = t.daily.dir === 'up' ? 1 : t.daily.dir === 'down' ? -1 : 0; if (a) { s += a * 10; why.push(`daily price trend is ${t.daily.dir}`); } }
+  s = Math.max(-100, Math.min(100, Math.round(s)));
+  return { s, label: s >= 25 ? 'Bullish context' : s <= -25 ? 'Bearish context' : 'Neutral / range', conf: Math.abs(s) >= 50 ? 'Medium' : Math.abs(s) >= 25 ? 'Low-medium' : 'Low', why };
+}
+function cotLook(sym, m, inv) {
+  const nr = nextCotRelease(), nm = sym;
+  return [
+    `Next report ${nr ? sast(nr) : '—'}: compare the new net (${fN(m.L)}) with this one. A bigger move in the same direction as price confirms the trend.`,
+    `Extreme zones: net above ${fN(m.p90)} = crowded long, look for failed breakouts and reversal candles. Below ${fN(m.p10)} = crowded short, look for short-covering spikes.`,
+    `Divergence: ${nm} makes a new high/low but net positioning does not follow = the move is weakening.`,
+    COT_CROSS[sym] + (inv ? '' : ''),
+  ];
+}
+const fN = v => (v >= 0 ? '+' : '') + Math.round(v).toLocaleString('en-US');
+function spark(net, p10, p90) {
+  const W = 400, H = 90, mn = Math.min(...net), mx = Math.max(...net), sp = (mx - mn) || 1, x = i => i / (net.length - 1) * W, y = v => H - 6 - (v - mn) / sp * (H - 12);
+  const d = net.map((v, i) => (i ? 'L' : 'M') + x(i).toFixed(1) + ',' + y(v).toFixed(1)).join('');
+  return `<svg viewBox="0 0 ${W} ${H}" class="w-full h-24"><rect x="0" y="${y(p90)}" width="${W}" height="${Math.max(1, y(p10) - y(p90))}" fill="#334155" opacity=".35"/><path d="${d}" fill="none" stroke="#fbbf24" stroke-width="2"/></svg>`;
+}
+async function loadCot() {
+  try {
+    let j; try { j = await callApi('/cot', 20000); } catch (e1) { try { j = await cotDirect(); } catch (e2) { throw new Error(e1.message + ' | direct: ' + e2.message); } }
+    if (j.error) throw new Error(j.error);
+    cotData = {}; state.cot = state.cot || {};
+    for (const sym of COT_SYMS) { const c = j[sym]; if (!c) continue; const rows = c.rows.slice().reverse(), m = cotStats(rows), o = cotOutlook(sym, m, c.inv);
+      cotData[sym] = { ...c, rows, m, o };
+      const x = (m.pctl >= 90 ? -.6 : m.pctl <= 10 ? .6 : 0) * (c.inv ? -1 : 1); state.cot[sym] = { x, txt: `${c.group} net ${m.pctl}th percentile of 3y`, outlook: o }; }
+    cotErr = null; refreshSignals();
+  } catch (e) { cotErr = String(e.message || e); }
+  renderCot();
+}
+function renderCot() {
+  const body = document.getElementById('cotBody'), nr = nextCotRelease();
+  document.getElementById('cotNote').textContent = `Next COT release (normally Fri 15:30 ET, holidays can delay): ${nr ? sast(nr) : '—'}. Data is as of the prior Tuesday, so it is up to 3 days old on release. The outlook is a positioning-based lean, not a prediction or advice.`;
+  if (!cotData) { body.innerHTML = `<div class="text-[12px] text-slate-400 p-4">${cotErr ? 'COT unavailable: ' + esc(cotErr) : 'Loading COT…'}</div>`; return; }
+  const tc = v => v >= 0 ? 'text-emerald-300' : 'text-rose-300';
+  body.innerHTML = COT_SYMS.filter(s => cotData[s]).map(sym => { const c = cotData[sym], m = c.m, o = c.o;
+    const chip = m.pctl >= 90 ? ['Crowded long', 'bg-rose-500/15 text-rose-300 border border-rose-500/40'] : m.pctl <= 10 ? ['Crowded short', 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/40'] : ['Mid-range', 'bg-slate-500/15 text-slate-300 border border-slate-600/40'];
+    const oc = o.s >= 25 ? 'text-emerald-300' : o.s <= -25 ? 'text-rose-300' : 'text-slate-300';
+    const st = (l, v, tone) => `<div><span class="block text-slate-500 text-[9px] uppercase">${l}</span><span class="font-bold tabular-nums ${tone || 'text-slate-200'}">${v}</span></div>`;
+    const sc = [`Net rises again and price confirms: trend continues, ${sym} leans ${c.inv ? 'down' : 'up'} while below the crowded zone.`, `Net falls while price rises (or the reverse): divergence, expect a pullback or range.`, `Net crosses ${fN(m.p90)} or ${fN(m.p10)}: positioning is stretched, trade reversals with tight stops and wait for confirmation.`];
+    return `<div class="bg-slate-900 border border-slate-800 rounded-2xl p-4">
+      <div class="flex items-center justify-between pb-2"><div><div class="text-[14px] font-extrabold text-white">${sym} · ${esc(c.title)}</div><div class="text-[10px] text-slate-500">${esc(c.group)} · positions as of Tue ${m.date}</div></div><span class="text-[11px] font-bold px-2 py-1 rounded-md ${chip[1]}">${chip[0]}</span></div>
+      <div class="rounded-xl bg-slate-950/60 border border-slate-800 p-3 mb-2"><div class="flex items-center justify-between"><span class="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Positioning outlook · ${sym}</span><span class="text-[12px] font-extrabold ${oc}">${o.label} (${o.s > 0 ? '+' : ''}${o.s})</span></div><div class="text-[10px] text-slate-500 mt-1">Confidence: ${o.conf}. Drivers: ${o.why.length ? o.why.join('; ') : 'no extreme or trend in positioning'}.</div></div>
+      <div class="grid grid-cols-3 gap-3 text-[12px] pb-2">${st('Net', fN(m.L), tc(m.L))}${st('Δ 1 week', fN(m.d1), tc(m.d1))}${st('Δ 4 weeks', fN(m.d4), tc(m.d4))}${st('3y percentile', m.pctl + 'th')}${st('Net % of OI', m.oiPct.toFixed(1) + '%')}${st(c.group2 + ' net', fN(m.sec))}</div>
+      ${spark(m.net, m.p10, m.p90)}<div class="text-[9px] text-slate-600 pb-2">3-year net position; shaded band = 10th to 90th percentile</div>
+      <div class="rounded-xl bg-slate-950/60 border border-slate-800 p-3 mb-2"><div class="text-[10px] uppercase tracking-wider text-slate-500 font-semibold pb-1">What to look for</div><ul class="space-y-1 text-[11px] text-slate-300 list-disc pl-4">${cotLook(sym, m, c.inv).map(t => `<li>${esc(t)}</li>`).join('')}</ul></div>
+      <div class="rounded-xl bg-slate-950/60 border border-slate-800 p-3 mb-2"><div class="text-[10px] uppercase tracking-wider text-slate-500 font-semibold pb-1">If / then</div><ul class="space-y-1 text-[11px] text-slate-400 list-disc pl-4">${sc.map(t => `<li>${esc(t)}</li>`).join('')}</ul></div>
+      <table class="w-full text-[10px] text-slate-400 tabular-nums"><tr class="text-slate-500"><td>Week (Tue)</td><td class="text-right">Net</td><td class="text-right">Change</td></tr>${c.rows.slice(-8).reverse().map((r, i) => { const nn = r.l - r.s, pv = c.rows[c.rows.length - 1 - i - 1]; const ch = pv ? nn - (pv.l - pv.s) : 0; return `<tr><td>${r.d}</td><td class="text-right">${fN(nn)}</td><td class="text-right ${tc(ch)}">${fN(ch)}</td></tr>`; }).join('')}</table></div>`; }).join('');
+}
+// ---------------- News bias, currency strength, interpretation ----------------
+const LEX = [
+  { re:/hawkish|rate hike|raises? rates|higher for longer|inflation (rises|accelerates|jumps|surges)|hot(ter)? inflation|strong(er)? (than expected )?(jobs|payrolls|data)|beats? (forecasts?|expectations)|yields? (rise|jump|surge|climb)/, m:{ DXY:1, XAUUSD:-1, NAS100:-1, EURUSD:-1, GBPUSD:-1, AUDUSD:-1, USDJPY:1 } },
+  { re:/dovish|rate cuts?|cuts? rates|inflation (eases|cools|slows|falls)|cooler inflation|weak(er)? (than expected )?(jobs|payrolls|data)|misses? (forecasts?|expectations)|yields? (fall|drop|slide|tumble)/, m:{ DXY:-1, XAUUSD:1, NAS100:1, EURUSD:1, GBPUSD:1, AUDUSD:1, USDJPY:-1 } },
+  { re:/sell-?off|plunge|tumble|crash|recession|\bwar\b|escalat|tariff|panic|turmoil|haven/, m:{ XAUUSD:1, NAS100:-1, AUDUSD:-1, DXY:.5, USDJPY:-.5 } },
+  { re:/rall(y|ies)|record high|surge|soar|optimis|stimulus|ceasefire|trade deal|risk[- ]on/, m:{ NAS100:1, AUDUSD:1, DXY:-.5, USDJPY:.5 } },
+  { re:/gold (rises?|gains?|climbs?|jumps?|rall|hits? (a )?record)/, m:{ XAUUSD:1 } },
+  { re:/gold (falls?|slips?|drops?|slides?|declines?|tumbles?)/, m:{ XAUUSD:-1 } },
+  { re:/(dollar|greenback|dxy) (rises?|gains?|strengthens?|climbs?|firms?)/, m:{ DXY:1, XAUUSD:-.5, EURUSD:-1, GBPUSD:-1, AUDUSD:-1, USDJPY:1 } },
+  { re:/(dollar|greenback|dxy) (falls?|weakens?|slips?|slides?|drops?|softens?)/, m:{ DXY:-1, XAUUSD:.5, EURUSD:1, GBPUSD:1, AUDUSD:1, USDJPY:-1 } },
+  { re:/china.*(stimulus|boost|rebound|beats?)/, m:{ AUDUSD:1 } },
+  { re:/china.*(slowdown|weak|misses?|deflation)/, m:{ AUDUSD:-1 } },
+];
+function headlineMap(title) { const t = title.toLowerCase(), out = {}; for (const l of LEX) if (l.re.test(t)) for (const [k, v] of Object.entries(l.m)) out[k] = (out[k] || 0) + v; return out; }
+function newsBias(sym) {
+  const now = Date.now(); let s = 0, w = 0; const top = [];
+  for (const it of state.newsItems || []) { const age = (now - it.ts) / 3.6e6; if (age > 8) continue; const m = headlineMap(it.title)[sym]; if (!m) continue;
+    const wt = (it.imp || 2) * Math.exp(-age / 4); s += m * wt; w += wt; top.push({ it, m }); }
+  return { score: w ? Math.round(Math.max(-1, Math.min(1, s / w)) * Math.min(1, w / 8) * 100) : 0, n: top.length, top: top.sort((a, b) => b.it.ts - a.it.ts).slice(0, 3) };
+}
+const CUR = [{ c:'USD', sym:'DXY', sign:1 }, { c:'EUR', sym:'EURUSD', sign:1 }, { c:'GBP', sym:'GBPUSD', sign:1 }, { c:'JPY', sym:'USDJPY', sign:-1 }, { c:'AUD', sym:'AUDUSD', sign:1 }];
+const CUR_DRIVER = { USD:'US yields, Fed expectations and red-folder US data', EUR:'ECB policy, eurozone inflation and PMIs', GBP:'BoE policy, UK CPI and jobs data', JPY:'BoJ policy and risk sentiment (the yen rises in risk-off)', AUD:'China data, commodities, RBA policy and global risk appetite' };
+function curStrength(c) {
+  const d = CUR.find(x => x.c === c), t = state.trends[d.sym], q = state.quotes[d.sym], p = q ? d.sign * pct(d.sym) : 0;
+  const dly = t ? d.sign * t.daily.score : 0, wk = t ? d.sign * t.weekly.score : 0;
+  const score = Math.max(-100, Math.min(100, Math.round(.45 * dly + .25 * wk + .30 * Math.max(-100, Math.min(100, p * 60)))));
+  const label = score >= 30 ? 'Strong' : score >= 12 ? 'Mildly strong' : score <= -30 ? 'Weak' : score <= -12 ? 'Mildly weak' : 'Neutral';
+  return { c, sym:d.sym, score, label, p, t, q };
+}
+function curLook(s) {
+  const d = CUR.find(x => x.c === s.c), sma = s.t && s.t.daily.fast ? fmt(s.t.daily.fast, assetOf(s.sym).dp) : '—';
+  const nx = EVENTS.filter(e => e.when > Date.now() && (e.country || 'USD') === s.c).sort((a, b) => a.when - b.when)[0];
+  const ev = nx ? ` Next ${s.c} red-folder: ${nx.name} (${sast(nx.when)}).` : '';
+  const eff = s.c === 'USD' ? (s.score >= 12 ? 'Headwind for gold, EURUSD, GBPUSD and AUDUSD; tailwind for USDJPY.' : s.score <= -12 ? 'Supports gold, EURUSD, GBPUSD and AUDUSD; USDJPY pressured.' : 'No clear dollar trend: trade the news reaction.') :
+    (s.score >= 12 ? `${s.c} bid: ${s.sym} ${d.sign > 0 ? 'rising' : 'falling'}.` : s.score <= -12 ? `${s.c} offered: ${s.sym} ${d.sign > 0 ? 'falling' : 'rising'}.` : `${s.c} range-bound.`);
+  return `${eff} Watch ${CUR_DRIVER[s.c]}. The view flips if ${s.sym} closes back through its daily SMA20 (${sma}).${ev}`;
+}
+function renderCurrency() {
+  const wrap = document.getElementById('curBoard'); if (!wrap) return;
+  wrap.innerHTML = CUR.map(d => { const s = curStrength(d.c), col = s.score >= 12 ? 'text-emerald-300' : s.score <= -12 ? 'text-rose-300' : 'text-slate-300', bar = s.score >= 0 ? 'linear-gradient(to right,#34d399,#10b981)' : 'linear-gradient(to right,#fb7185,#f43f5e)';
+    return `<div class="rounded-xl bg-slate-950/60 border border-slate-800 p-3"><div class="flex items-center justify-between"><span class="text-[13px] font-extrabold text-white">${s.c}</span><span class="text-[11px] font-bold ${col}">${s.label} (${s.score > 0 ? '+' : ''}${s.score}) · ${s.p >= 0 ? '+' : ''}${s.p.toFixed(2)}% today</span></div>
+      <div class="relative h-2 rounded-full bg-slate-800 overflow-hidden my-1.5"><div class="absolute inset-y-0 left-1/2 w-px bg-slate-600"></div><div class="absolute inset-y-0 left-1/2 rounded-full" style="width:${Math.abs(s.score) / 2}%;background:${bar};${s.score < 0 ? 'transform:translateX(-100%);' : ''}"></div></div>
+      <p class="text-[10px] text-slate-400 leading-relaxed">${esc(curLook(s))}</p></div>`; }).join('');
+}
+const PLAYBOOK = {
+  XAUUSD: ['Gold usually rises when the dollar and US yields fall; look for DXY weakness to confirm longs.', 'CPI, NFP and FOMC can swing gold $30-60 in minutes: stay flat 5 minutes before and let the first 5m candle close.', 'Bias holds while price stays above the daily SMA20 with higher lows; a close below it with DXY rising flips the bias.'],
+  NAS100: ['Nasdaq is rate-sensitive: hot inflation or jobs data lifts yields and hits tech; soft data helps.', 'Look for megacap earnings and AI/chip headlines; falling yields plus rising price is the healthiest setup.', 'Bias holds above the daily SMA20; failed breakouts at highs into red-folder events are fade candidates.'],
+  DXY: ['Dollar strength shows as DXY above its daily SMA20 with rising US yields.', 'Hawkish Fed, strong NFP or hot CPI push it up; the opposite weakens it. EURUSD is over half the index.', 'A DXY reversal usually shows first in EURUSD and gold.'],
+  EURUSD: ['EURUSD mirrors the dollar: weak DXY lifts it; ECB hawkishness helps.', 'Watch US red-folder data and eurozone CPI/PMIs; a hot US print pushes it down.', 'Bias holds above the daily SMA20; breakouts need DXY confirmation.'],
+  GBPUSD: ['Driven by the dollar plus BoE expectations; UK CPI and jobs are the key GBP releases.', 'Strong UK data with a weak USD is the cleanest long setup.', 'Fade moves into red-folder events if DXY disagrees.'],
+  USDJPY: ['USDJPY rises with US yields and risk-on; it falls on risk-off or a hawkish BoJ.', 'Watch the US 10-year yield and any Japanese intervention comments: spikes can reverse fast.', 'Bias holds above the daily SMA20; a sudden drop on risk-off is typical.'],
+  AUDUSD: ['AUD trades as a China and global-risk proxy: strong Chinese data and rising stocks help it; risk-off and a strong USD hurt it.', 'Key AUD red-folder events: RBA decisions, Australian jobs and CPI; also watch iron ore and copper.', 'Bias holds above the daily SMA20; a falling Nasdaq with rising DXY is the bearish combination.'],
+};
+function fmtDur(ms) { const h = Math.floor(ms / 3.6e6), m = Math.floor(ms % 3.6e6 / 6e4); return h >= 24 ? `${Math.floor(h / 24)}d ${h % 24}h` : `${h}h ${m}m`; }
+function renderInterp() {
+  const sym = state.selected, a = assetOf(sym); if (!a || !document.getElementById('interpBias')) return;
+  const sc = SIGNAL_CFG[sym] || { score:0 }, nb = newsBias(sym), parts = [{ n:'Technical', w:.40, x:sc.score / 100, v:(sc.score > 0 ? '+' : '') + sc.score }, { n:'News bias', w:.25, x:nb.score / 100, v:(nb.score > 0 ? '+' : '') + nb.score + ` (${nb.n} headlines)` }];
+  if (sym !== 'DXY' && state.quotes.DXY) { const dp = pct('DXY'), x = Math.max(-1, Math.min(1, (sym === 'USDJPY' ? 1 : -1) * dp / .5)); parts.push({ n:'Dollar', w:.20, x, v:`DXY ${dp >= 0 ? '+' : ''}${dp.toFixed(2)}%` }); }
+  const ct = state.cot && state.cot[sym]; if (ct) parts.push({ n:'COT', w:.15, x:ct.x, v:ct.outlook ? ct.outlook.label : '—' });
+  const W = parts.reduce((s, p) => s + p.w, 0), comp = Math.round(100 * parts.reduce((s, p) => s + p.w * p.x, 0) / W);
+  const lab = comp >= 35 ? ['Bullish', 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/40'] : comp >= 15 ? ['Mildly bullish', 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30'] : comp <= -35 ? ['Bearish', 'bg-rose-500/15 text-rose-300 border border-rose-500/40'] : comp <= -15 ? ['Mildly bearish', 'bg-rose-500/10 text-rose-400 border border-rose-500/30'] : ['Neutral', 'bg-slate-500/10 text-slate-300 border border-slate-600/40'];
+  document.getElementById('interpSym').textContent = sym;
+  const chip = document.getElementById('interpBias'); chip.textContent = `${lab[0]} (${comp > 0 ? '+' : ''}${comp})`; chip.className = 'text-[11px] font-bold px-2 py-1 rounded-md ' + lab[1];
+  document.getElementById('interpDrivers').innerHTML = parts.map(p => `<div class="rounded-lg bg-slate-950/60 border border-slate-800 p-2"><div class="text-[9px] uppercase tracking-wider text-slate-500 font-bold">${p.n} · ${Math.round(p.w / W * 100)}%</div><div class="text-[11px] font-bold ${p.x > .1 ? 'text-emerald-300' : p.x < -.1 ? 'text-rose-300' : 'text-slate-300'}">${esc(p.v)}</div></div>`).join('');
+  const now = Date.now(), look = [], ne = EVENTS.filter(e => e.when > now && evM(e)[sym] && evM(e)[sym] !== 'flat').sort((x, y) => x.when - y.when)[0];
+  if (ne) { const d = evM(ne)[sym]; look.push(`<b>Next red-folder:</b> ${esc((ne.country || 'USD') + ' · ' + ne.name)} in ${fmtDur(ne.when - now)} (${sast(ne.when)}). Beats forecast → ${sym} ${dArrow(d)}; misses → ${dArrow(d === 'up' ? 'down' : 'up')}. Stay flat 5 minutes before and let the first 5m candle close.`); }
+  else look.push('No red-folder event for this market in the calendar window.');
+  if (sym !== 'DXY') { const u = curStrength('USD'); look.push(`<b>Dollar:</b> USD is ${u.label.toLowerCase()} (${u.score > 0 ? '+' : ''}${u.score}). ${sym === 'USDJPY' ? 'A strong dollar supports USDJPY.' : 'A strong dollar is a headwind for ' + sym + '; a weak one helps.'}`); }
+  const cr = CUR.find(x => x.sym === sym); if (cr) { const s = curStrength(cr.c); look.push(`<b>${cr.c} strength:</b> ${s.label.toLowerCase()} (${s.score > 0 ? '+' : ''}${s.score}). ${esc(curLook(s))}`); }
+  look.push(...PLAYBOOK[sym].map(esc));
+  document.getElementById('interpLook').innerHTML = look.map(t => `<li>${t}</li>`).join('');
+  document.getElementById('interpNews').innerHTML = nb.top.length ? nb.top.map(({ it, m }) => `<li><span class="${m > 0 ? 'text-emerald-300' : 'text-rose-300'} font-bold">${m > 0 ? '▲' : '▼'}</span> ${esc(it.title)} <span class="text-slate-600">· ${esc(it.src)}</span></li>`).join('') : '<li>No recent headlines clearly moving this market (keyword-based read of the last 8 hours).</li>';
+}
+function showTab(t) {
+  document.getElementById('dashMain').classList.toggle('hidden', t !== 'dash'); document.getElementById('cotMain').classList.toggle('hidden', t !== 'cot');
+  const on = 'bg-slate-700 text-white', off = 'text-slate-400 hover:bg-slate-800';
+  document.getElementById('tabDash').className = 'text-[12px] font-bold px-3 py-1 rounded-md ' + (t === 'dash' ? on : off);
+  document.getElementById('tabCot').className = 'text-[12px] font-bold px-3 py-1 rounded-md ' + (t === 'cot' ? on : off);
+  if (t === 'cot') renderCot();
+}
+
+    
+
+    function renderEventCountdown() {
+      const now = Date.now();
+      const future = EVENTS.filter(e => now < e.when).sort((a, b) => a.when - b.when);
+      const next = future[0];
+      const nameEl = document.getElementById('evNextName');
+      const clockEl = document.getElementById('evNextClock');
+      const subEl = document.getElementById('evNextSub');
+      const progEl = document.getElementById('evProgress');
+      if (!next) {
+        nameEl.textContent = 'No upcoming events';
+        clockEl.textContent = '--:--:--';
+        subEl.textContent = 'All released';
+        progEl.style.width = '0%';
+        renderBiasMatrix(null);
+        return;
+      }
+      const diff = next.when - now;
+      const d = Math.floor(diff / 86400000);
+      const h = Math.floor((diff % 86400000) / 3600000);
+      const m = Math.floor((diff % 3600000) / 60000);
+      const s = Math.floor((diff % 60000) / 1000);
+      nameEl.textContent = next.name;
+      clockEl.textContent = `${String(d).padStart(2,'0')}:${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+      subEl.textContent = 'd : h : m : s';
+      const prev = EVENTS.filter(e => e.when < next.when).sort((a, b) => b.when - a.when)[0];
+      const windowStart = prev ? prev.when : next.when - 7 * 86400000;
+      const pct = Math.max(0, Math.min(100, ((now - windowStart) / (next.when - windowStart)) * 100));
+      progEl.style.width = pct.toFixed(1) + '%';
+
+      renderBiasMatrix(next);
+
+      const curStatus = eventStatus(next, now);
+      const dot = document.getElementById('evNextDot');
+      if (curStatus === 'live') {
+        dot.innerHTML = '<span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-70"></span><span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-rose-400"></span>';
+        clockEl.className = 'text-[15px] font-extrabold text-rose-300 tabular-nums';
+      } else {
+        dot.innerHTML = '<span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-60"></span><span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-400"></span>';
+        clockEl.className = 'text-[15px] font-extrabold text-amber-300 tabular-nums';
+      }
+
+      if (!state._autoFlip) state._autoFlip = { active:false, eventId:null, prevTf:'5m', prevType:'candle', nextId:null, nextName:'' };
+      state._autoFlip.nextId = next.id;
+      state._autoFlip.nextName = next.name;
+
+      const prevStatus = state._lastEvStatus ? state._lastEvStatus[next.id] : null;
+      if ((prevStatus !== null && prevStatus !== curStatus) || (prevStatus === null && curStatus === 'live')) {
+        handleAutoFlip(true, curStatus);
+        if (curStatus === 'live' && next.imp >= NOTIF_CFG.minImp) sendLiveNotif(next);
+      }
+
+      state._lastEvStatus = Object.fromEntries(EVENTS.map(e => [e.id, eventStatus(e, now)]));
+      renderEvents();
+    }
+
+    // ---------------------------------------------------------------
+    //  Init + REAL-TIME LOOPS
+    // ---------------------------------------------------------------
+    buildAssetList();
+    renderSignalBoard();
+    renderEvents();
+    updateClock();
+    updateChartControls();
+    setStatus('connecting');
+
+    document.getElementById('btnCandle').addEventListener('click', () => { state.chartType = 'candle'; updateChartControls(); renderChart(); savePrefs(); });
+    document.getElementById('btnLine').addEventListener('click', () => { state.chartType = 'line'; updateChartControls(); renderChart(); savePrefs(); });
+    document.getElementById('tf1m').addEventListener('click', () => { state.chartTf = '1m'; updateChartControls(); ensureChartData(state.selected, '1m'); savePrefs(); });
+    document.getElementById('tf5m').addEventListener('click', () => { state.chartTf = '5m'; updateChartControls(); ensureChartData(state.selected, '5m'); savePrefs(); });
+    document.getElementById('tf1h').addEventListener('click', () => { state.chartTf = '1h'; updateChartControls(); ensureChartData(state.selected, '1h'); savePrefs(); });
+    document.getElementById('tf1D').addEventListener('click', () => { state.chartTf = '1D'; updateChartControls(); ensureChartData(state.selected, '1D'); savePrefs(); });
+    document.getElementById('notifBtn').addEventListener('click', enableNotifications);
+
+// ---------------------------------------------------------------
+//  REAL signal engine (rule-based, computed from live 15m candles)
+// ---------------------------------------------------------------
+function emaArr(v, n) { const k = 2 / (n + 1); let e = v[0]; const o = [e]; for (let i = 1; i < v.length; i++) { e = v[i] * k + e * (1 - k); o.push(e); } return o; }
+function rsi14(c, n = 14) { let g = 0, l = 0; for (let i = 1; i <= n; i++) { const d = c[i] - c[i-1]; d >= 0 ? g += d : l -= d; } g /= n; l /= n;
+  for (let i = n + 1; i < c.length; i++) { const d = c[i] - c[i-1]; g = (g * (n-1) + Math.max(d, 0)) / n; l = (l * (n-1) + Math.max(-d, 0)) / n; } return l === 0 ? 100 : 100 - 100 / (1 + g / l); }
+function atr14(s, n = 14) { let a = 0; for (let i = 1; i < s.length; i++) { const tr = Math.max(s[i].h - s[i].l, Math.abs(s[i].h - s[i-1].c), Math.abs(s[i].l - s[i-1].c)); a = i <= n ? a + tr / n : (a * (n-1) + tr) / n; } return a; }
+function computeSignal(sym, series) {
+  const a = assetOf(sym), th = Math.tanh, cl = series.map(s => s.c), L = cl.length - 1, price = cl[L];
+  const e20 = emaArr(cl, 20), e50 = emaArr(cl, 50), m12 = emaArr(cl, 12), m26 = emaArr(cl, 26);
+  const macd = m12.map((v, i) => v - m26[i]), sg = emaArr(macd, 9), hist = macd[L] - sg[L];
+  const atr = atr14(series), rsi = rsi14(cl), tr = state.trends[sym], live = tr && tr.live;
+  const comps = [
+    { w:.25, x: th((e20[L] - e50[L]) / atr) },
+    { w:.20, x: th(hist / atr * 4) },
+    { w:.15, x: rsi > 75 ? -.4 : rsi < 25 ? .4 : Math.max(-1, Math.min(1, (rsi - 50) / 30)) },
+  ];
+  if (live) { comps.push({ w:.25, x: tr.daily.score / 100 }); comps.push({ w:.15, x: tr.weekly.score / 100 }); }
+  const W = comps.reduce((s, c) => s + c.w, 0);
+  const score = Math.round(100 * comps.reduce((s, c) => s + c.w * c.x, 0) / W);
+  const tot = comps.reduce((s, c) => s + c.w * Math.abs(c.x), 0) || 1;
+  const agree = comps.filter(c => Math.sign(c.x) === Math.sign(score)).reduce((s, c) => s + c.w * Math.abs(c.x), 0) / tot;
+  const now = Date.now();
+  const ev = EVENTS.find(e => e.imp >= 4 && (eventStatus(e, now) === 'live' || (e.when > now && e.when - now < 3600000)));
+  const conf = Math.max(15, Math.min(90, Math.round(35 + 55 * agree) - (ev ? 20 : 0)));
+  const dir = Math.sign(score), f = v => fmt(v, a.dp);
+  const plan = Math.abs(score) >= 15 ? [f(price), f(price - dir * 1.5 * atr), f(price + dir * 2.25 * atr)] : ['—', '—', '—'];
+  let reason = `${Math.abs(score) < 15 ? 'No clear edge' : dir > 0 ? 'Bullish bias' : 'Bearish bias'}: 15m EMA20 ${e20[L] > e50[L] ? 'above' : 'below'} EMA50, RSI ${rsi.toFixed(0)}, MACD ${hist > 0 ? 'positive' : 'negative'}`
+    + (live ? `, daily ${tr.daily.dir}, weekly ${tr.weekly.dir}` : ', daily/weekly trend unavailable')
+    + `. Stop 1.5× / target 2.25× ATR(15m) = ${f(atr)}. Confidence = indicator agreement, not a probability.`;
+  if (ev) reason += ` Event risk: ${ev.name} within the hour — confidence reduced.`;
+  return { score, conf, plan, reason };
+}
+async function refreshSignal(sym) {
+  try {
+    const j = await fetchYahoo(assetOf(sym).yahoo, '5d', '15m');
+    if (!j.series || j.series.length < 60) throw new Error('short');
+    SIGNAL_CFG[sym] = computeSignal(sym, j.series);
+  } catch (e) { SIGNAL_CFG[sym] = { score:0, conf:0, plan:['—','—','—'], reason:'No live data — signal unavailable.' }; }
+}
+async function refreshSignals() {
+  if (document.hidden && state.signalsReady) return; state.signalsReady = true; await Promise.all(ASSETS.map(a => refreshSignal(a.sym))); renderSignalBoard(); renderSignalDetail(); }
+
+
+
+    ASSETS.forEach(a => {
+      state.quotes[a.sym] = synthQuote(a);
+      state.sources[a.sym] = 'SIM';
+      const daily = synthDailySeries(a), weekly = weeklySeries(daily);
+      const last = daily[daily.length - 1].c;
+      state.trends[a.sym] = { daily: makeTrend(daily.map(s => s.c), last), weekly: makeTrend(weekly.map(w => w.c), weekly.length ? weekly[weekly.length - 1].c : last), weekCount: weekly.length, live: false };
+    });
+
+    renderAll();
+    renderTrendBoard();
+    selectAsset('XAUUSD');
+    renderEventCountdown();
+
+    refreshAllQuotes();
+    refreshAllTrends().then(refreshSignals);
+    connectHL();
+    refreshNews();
+
+    document.getElementById('refreshBtn').addEventListener('click', () => {
+      refreshAllQuotes();
+      refreshAllTrends();
+      ensureChartData(state.selected, state.chartTf);
+    });
+
+    setInterval(updateClock, 1000);
+    setInterval(refreshHalf, 3000);
+    setInterval(refreshAllTrends, 120000);
+    setInterval(refreshNews, 20000);
+    setInterval(refreshSignals, 60000);
+    setInterval(() => { try { renderInterp(); renderCurrency(); } catch (e) {} }, 4000);
+    document.getElementById('tabDash').addEventListener('click', () => showTab('dash'));
+    document.getElementById('tabCot').addEventListener('click', () => showTab('cot'));
+    showTab('dash'); loadCalendar(); setInterval(loadCalendar, 60000); loadCot(); setInterval(loadCot, 6 * 3600000);
+    setInterval(renderEventCountdown, 1000);
+    setInterval(() => {
+      if (state.chartTf !== '1D' && state.selected) ensureChartData(state.selected, state.chartTf);
+    }, 45000);
+  </script>
+</body>
+</html>
