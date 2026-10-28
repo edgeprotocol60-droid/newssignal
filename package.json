@@ -1,5 +1,10 @@
 {
   "dependencies": {
-    "@netlify/blobs": "^11.1.6"
+    "@netlify/blobs": "^11.1.6",
+    "@netlify/database": "^2.0.1",
+    "drizzle-orm": "^1.0.0-beta.22"
+  },
+  "devDependencies": {
+    "drizzle-kit": "^1.0.0-beta.22"
   }
 }

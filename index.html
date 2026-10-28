@@ -406,6 +406,8 @@
   <p id="cotNote" class="text-[11px] text-slate-500"></p>
 </main>
 
+  <link rel="stylesheet" href="assets/analysis.css">
+  <script src="assets/quant.js"></script>
   <script>
     // ================================================================
     //  NEWSIGNAL v13 — REALTIME core + HIGH-IMPACT CALENDAR
@@ -539,7 +541,7 @@
       if (!r.ok) throw new Error('HTTP ' + r.status);
       return r.text();
     }
-    const HL_MS = { '1m':6e4, '5m':3e5, '15m':9e5, '1h':36e5, '1d':864e5 };
+    const HL_MS = { '1m':6e4, '5m':3e5, '15m':9e5, '1h':36e5, '1d':864e5, '1w':6048e5 };
     async function hlPost(body) {
       try { const r = await fetch('https://api.hyperliquid.xyz/info', { method:'POST', headers:{ 'Content-Type':'application/json' }, body:JSON.stringify(body) }); if (!r.ok) throw new Error('HL ' + r.status); return await r.json(); }
       catch (e) { const r = await fetch(`${API}/hl`, { method:'POST', headers:{ 'Content-Type':'application/json' }, body:JSON.stringify(body) }); if (!r.ok) throw new Error('HL proxy ' + r.status); return await r.json(); }
@@ -586,21 +588,9 @@
       }
     }
     let hlRetry = 0;
-    function connectHL() {   // real-time ticks over WebSocket
-      try {
-        const ws = new WebSocket('wss://api.hyperliquid.xyz/ws');
-        ws.onopen = () => { hlRetry = 0; ASSETS.filter(a => isHL(a.yahoo)).forEach(a => ws.send(JSON.stringify({ method:'subscribe', subscription:{ type:'candle', coin:a.yahoo, interval:'1m' } }))); };
-        ws.onmessage = e => { try {
-          const m = JSON.parse(e.data); if (m.channel !== 'candle') return;
-          for (const c of (Array.isArray(m.data) ? m.data : [m.data])) {
-            const a = ASSETS.find(x => x.yahoo === c.s || x.yahoo.split(':')[1] === c.s), q = a && state.quotes[a.sym];
-            if (!q || state.sources[a.sym] !== 'LIVE') continue;
-            const price = +c.c; q.price = price; q.high = Math.max(q.high, price); q.low = Math.min(q.low, price); q.ts = Date.now(); q.ws = true;
-            updateAssetRow(a.sym); bumpLiveTick(a.sym, price);
-          } } catch (_) {} };
-        ws.onclose = () => setTimeout(connectHL, Math.min(30000, 3000 * Math.pow(2, hlRetry++)));
-        ws.onerror = () => { try { ws.close(); } catch (_) {} };
-      } catch (e) {}
+    function connectHL() {
+      if (window.analysisConnect) window.analysisConnect();
+      else document.addEventListener('analysis-ready', () => window.analysisConnect(), {once:true});
     }
     async function fetchCoinGecko() {
       const res = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd&include_24hr_change=true');
@@ -736,7 +726,6 @@
       chartTf: prefs.chartTf || '5m',
       chartCache:{}, lastNewsAt:0, _lastEvStatus:null, _autoFlip:null
     };
-    function rand() { state.simSeed = (state.simSeed * 1664525 + 1013904223) % 4294967296; return state.simSeed / 4294967296; }
     const assetOf = s => ASSETS.find(a => a.sym === s);
     const fmt = (v, dp) => v.toLocaleString('en-US', { minimumFractionDigits: dp, maximumFractionDigits: dp });
     function pct(sym) { const q = state.quotes[sym]; if (!q) return 0; return (q.price - q.prevClose) / q.prevClose * 100; }
@@ -781,27 +770,6 @@
     // ---------------------------------------------------------------
     //  Synthetic OHLC
     // ---------------------------------------------------------------
-    function synthSeriesFor(tf, base) {
-      const stepMs = STEP_MS[tf] || 300000;
-      const n = tf === '1m' ? 90 : tf === '5m' ? 120 : tf === '1h' ? 120 : 150;
-      const series = [];
-      let p = base * (1 - 0.004);
-      for (let i = 0; i < n; i++) {
-        p *= 1 + (rand() - 0.5) * 0.0015;
-        const o = p * (1 + (rand() - 0.5) * 0.0005);
-        const c = p * (1 + (rand() - 0.5) * 0.0005);
-        const h = Math.max(o, c) * (1 + rand() * 0.0006);
-        const l = Math.min(o, c) * (1 - rand() * 0.0006);
-        series.push({ t: Date.now() - (n - i) * stepMs, o, h, l, c });
-      }
-      return series;
-    }
-    function synthQuote(a) {
-      const series = synthSeriesFor('1m', a.base);
-      const last = series[series.length - 1];
-      return { price: last.c, prevClose: a.base, open: series[0].o, high: Math.max(...series.map(s => s.h)), low: Math.min(...series.map(s => s.l)), volume: a.vol, series, ts: Date.now(), synth: true };
-    }
-
     // ---------------------------------------------------------------
     //  Quotes
     // ---------------------------------------------------------------
@@ -824,7 +792,7 @@
     let halfIdx = 0, tickN = 0;
     async function refreshHalf() {
   if (document.hidden) return;
-      tickN++; const half = ASSETS.filter(a => isHL(a.yahoo) || tickN % 20 === 1);
+      tickN++; const half = ASSETS.filter(a => isHL(a.yahoo) ? (tickN % 10 === 1 && (!state.quotes[a.sym]?.ws || Date.now()-state.quotes[a.sym].ts>30000)) : tickN % 20 === 1);
       halfIdx = (halfIdx + 1) % 2;
       const results = await Promise.allSettled(half.map(a => refreshQuote(a.sym)));
       updateHealth();
@@ -895,7 +863,7 @@
         last.l = Math.min(last.l, price);
       }
       cd.ts = now;
-      if (state.selected === sym) renderChart();
+      if (state.selected === sym && !document.hidden && (!cd.drawAt || now - cd.drawAt >= 1000)) { cd.drawAt=now; renderChart(); }
     }
 
     // ---------------------------------------------------------------
@@ -934,22 +902,18 @@
       if (dir === 'neutral') score = Math.max(-20, Math.min(20, score));
       return { dir, score, fast, slow, lt, mom5, mom20 };
     }
-    function synthDailySeries(a) {
-      const base = a.base, s = [];
-      let p = base * (1 - 0.06);
-      for (let i = 0; i < 126; i++) { p *= 1 + (rand() - 0.48) * 0.008; s.push({ t: Date.now() - (126 - i) * 86400000, c: p }); }
-      return s;
+    function unavailableTrend() {
+      const empty=()=>({dir:'unavailable',score:0,fast:null,slow:null,lt:null,mom5:0,mom20:0});
+      return {daily:empty(),weekly:empty(),weekCount:0,live:false};
     }
     async function refreshTrend(sym) {
       const a = assetOf(sym);
       try {
         const q = await fetchYahoo(a.yahoo, '6mo', '1d');
-        const daily = q.series, weekly = weeklySeries(daily);
+        const daily = q.series; if(!daily || daily.length<60)throw new Error('Insufficient daily history'); const weekly = weeklySeries(daily);
         state.trends[sym] = { daily: makeTrend(daily.map(s => s.c), q.price), weekly: makeTrend(weekly.map(w => w.c), weekly.length ? weekly[weekly.length - 1].c : q.price), weekCount: weekly.length, live: true };
       } catch (e) {
-        const daily = synthDailySeries(a), weekly = weeklySeries(daily);
-        const last = daily[daily.length - 1].c;
-        state.trends[sym] = { daily: makeTrend(daily.map(s => s.c), last), weekly: makeTrend(weekly.map(w => w.c), weekly.length ? weekly[weekly.length - 1].c : last), weekCount: weekly.length, live: false };
+        state.trends[sym] = unavailableTrend();
       }
     }
     async function refreshAllTrends() {
@@ -958,7 +922,7 @@
       renderTrendBoard();
       renderTrendDetail();
     }
-    function regimeOf(t) { const d = t.daily.dir, w = t.weekly.dir;
+    function regimeOf(t) { if(!t.live)return {label:'n/a',cls:'text-slate-500'}; const d = t.daily.dir, w = t.weekly.dir;
       if (d === 'up' && w === 'up') return { label:'Bullish', cls:'bg-emerald-500/15 text-emerald-300 border border-emerald-500/40' };
       if (d === 'down' && w === 'down') return { label:'Bearish', cls:'bg-rose-500/15 text-rose-300 border border-rose-500/40' };
       return { label:'Mixed', cls:'bg-amber-500/15 text-amber-300 border border-amber-500/40' }; }
@@ -972,6 +936,7 @@
       return `width:${w}%; background:${bg}; transform:${score < 0 ? 'translateX(-100%)' : 'none'};`;
     }
     function biasOf(t) {
+      if(!t.live)return {label:'n/a',cls:'text-slate-500',tip:'Verified trend history unavailable'};
       const d = t.daily.dir, w = t.weekly.dir;
       if (d === 'up' && w === 'up') return { label:'Long dips', cls:'bg-emerald-500/15 text-emerald-300 border border-emerald-500/40', tip:'Strong alignment — buy daily pullbacks in a weekly uptrend.' };
       if (d === 'down' && w === 'down') return { label:'Short rallies', cls:'bg-rose-500/15 text-rose-300 border border-rose-500/40', tip:'Strong alignment — sell daily strength into a weekly downtrend.' };
@@ -1074,10 +1039,6 @@
       const x = i => PL + (i / (series.length - 1)) * (W - PL - PR);
       const y = v => PT + (1 - (v - min) / span) * (H - PT - PB);
       const grid = buildGrid(min, max, span, a, W, H, PL, PR, PT, PB);
-      const mi = Math.floor(series.length * 0.62);
-      const marker = `
-        <line x1="${x(mi)}" y1="${PT}" x2="${x(mi)}" y2="${H - PB}" stroke="#fb7185" stroke-width="1.5" stroke-dasharray="4 4"/>
-        <circle cx="${x(mi)}" cy="${y(series[mi].c)}" r="3.5" fill="#fb7185"/>`;
       let body = '';
       const lastC = series[series.length - 1].c;
       if (state.chartType === 'candle') {
@@ -1118,7 +1079,7 @@
         </defs>
         ${grid}
         ${body}
-        ${marker}`;
+        ${window.analysisOverlay ? window.analysisOverlay(series,x,y,min,max) : ""}`;
 
       const q = state.quotes[state.selected];
       const price = q ? q.price : lastC;
@@ -1256,7 +1217,12 @@
     function renderTrendDetail() {
       const a = assetOf(state.selected), t = state.trends[state.selected];
       document.getElementById('trendSym').textContent = a.sym;
-      if (!t) return;
+      if (!t || !t.live) {
+        for(const id of ['dailyTrendLabel','weeklyTrendLabel','regimeChip'])document.getElementById(id).textContent='n/a';
+        for(const id of ['dailyTrendStats','weeklyTrendStats'])document.getElementById(id).textContent='n/a · daily history unavailable';
+        document.getElementById('trendReason').textContent='n/a · verified trend history unavailable';
+        return;
+      }
       const dl = trendLabel(t, 'daily'), wl = trendLabel(t, 'weekly'), rg = regimeOf(t);
       const dLabel = document.getElementById('dailyTrendLabel');
       dLabel.textContent = dl.text; dLabel.className = 'text-[11px] font-bold ' + dl.cls;
@@ -1548,6 +1514,7 @@ function spark(net, p10, p90) {
   return `<svg viewBox="0 0 ${W} ${H}" class="w-full h-24"><rect x="0" y="${y(p90)}" width="${W}" height="${Math.max(1, y(p10) - y(p90))}" fill="#334155" opacity=".35"/><path d="${d}" fill="none" stroke="#fbbf24" stroke-width="2"/></svg>`;
 }
 async function loadCot() {
+  if(document.hidden)return;
   try {
     let j; try { j = await callApi('/cot', 20000); } catch (e1) { try { j = await cotDirect(); } catch (e2) { throw new Error(e1.message + ' | direct: ' + e2.message); } }
     if (j.error) throw new Error(j.error);
@@ -1804,9 +1771,7 @@ async function refreshSignals() {
     ASSETS.forEach(a => {
       state.quotes[a.sym] = null;
       state.sources[a.sym] = 'CONNECTING';
-      const daily = synthDailySeries(a), weekly = weeklySeries(daily);
-      const last = daily[daily.length - 1].c;
-      state.trends[a.sym] = { daily: makeTrend(daily.map(s => s.c), last), weekly: makeTrend(weekly.map(w => w.c), weekly.length ? weekly[weekly.length - 1].c : last), weekCount: weekly.length, live: false };
+      state.trends[a.sym] = unavailableTrend();
     });
 
     renderAll();
@@ -1825,20 +1790,22 @@ async function refreshSignals() {
       ensureChartData(state.selected, state.chartTf);
     });
 
-    setInterval(() => {updateClock();ASSETS.forEach(a=>updateAssetRow(a.sym));}, 1000);
+    setInterval(() => {if(document.hidden)return;updateClock();ASSETS.forEach(a=>updateAssetRow(a.sym));}, 1000);
     setInterval(refreshHalf, 3000);
     setInterval(refreshAllTrends, 120000);
     setInterval(refreshNews, 20000);
     setInterval(refreshSignals, 60000);
-    setInterval(() => { try { renderInterp(); renderCurrency(); } catch (e) {} }, 4000);
+    setInterval(() => { if(document.hidden)return; try { renderInterp(); renderCurrency(); } catch (e) {} }, 4000);
     document.getElementById('tabDash').addEventListener('click', () => showTab('dash'));
     document.getElementById('tabCot').addEventListener('click', () => showTab('cot'));
     showTab('dash'); loadCalendar(); setInterval(loadCalendar, 60000); loadCot(); setInterval(loadCot, 6 * 3600000);
-    setInterval(renderEventCountdown, 1000);
+    setInterval(() => {if(!document.hidden)renderEventCountdown();}, 1000);
     setInterval(() => {
       if (!document.hidden && state.chartTf !== '1D' && state.selected) ensureChartData(state.selected, state.chartTf);
     }, 45000);
   </script>
+
+<script src="assets/analysis.js"></script>
 
 <!-- NewsSignal email/password authentication -->
 <style>

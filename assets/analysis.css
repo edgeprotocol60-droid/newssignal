@@ -1,0 +1,259 @@
+#analysisMain {
+  max-width: 1100px;
+  margin: 20px auto;
+  padding: 0 12px;
+  color: #cbd5e1;
+  font-size: 12px;
+}
+#analysisMain header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 16px;
+}
+#analysisMain h1 {
+  font-size: 22px;
+  font-weight: 800;
+  color: #fbbf24;
+  letter-spacing: -0.6px;
+}
+#analysisMain small,
+.qa-note {
+  color: #94a3b8;
+  font-size: 11px;
+}
+.qa-section {
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 12px;
+  margin: 10px 0;
+  overflow: hidden;
+}
+.qa-section > summary {
+  cursor: pointer;
+  padding: 16px;
+  font-weight: 700;
+  color: #e2e8f0;
+  min-height: 48px;
+}
+.qa-section > summary::marker {
+  color: #d8a84d;
+}
+.qa-body {
+  padding: 0 14px 16px;
+  overflow-x: auto;
+}
+.qa-status {
+  font-size: 10px;
+  color: #94a3b8;
+  margin: 8px 0;
+  display: block;
+}
+.qa-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  margin-right: 5px;
+  background: #fbbf24;
+}
+.qa-live {
+  background: #34d399;
+}
+.qa-stale {
+  background: #fb7185;
+}
+.qa-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.qa-metric {
+  padding: 10px;
+  background: #172033;
+  border: 1px solid #273449;
+  border-radius: 7px;
+}
+.qa-metric b {
+  display: block;
+  font-size: 17px;
+  color: #e2e8f0;
+  font-variant-numeric: tabular-nums;
+}
+.qa-table {
+  width: 100%;
+  font-size: 11px;
+  border-collapse: collapse;
+  white-space: normal;
+}
+.qa-table th {
+  text-align: left;
+  font-size: 9px;
+  text-transform: uppercase;
+  color: #94a3b8;
+  letter-spacing: 0.6px;
+}
+.qa-table td,
+.qa-table th {
+  padding: 8px 5px;
+  border-bottom: 1px solid #263246;
+  vertical-align: top;
+}
+.qa-table td:first-child {
+  color: #e2e8f0;
+}
+.qa-pass {
+  color: #6ee7b7;
+}
+.qa-fail {
+  color: #fda4af;
+}
+.qa-neutral {
+  color: #94a3b8;
+}
+.qa-banner {
+  border-left: 3px solid #d8a84d;
+  background: #1e293b;
+  padding: 12px;
+  margin: 8px 0;
+  border-radius: 4px;
+}
+.qa-banner strong {
+  color: #fbbf24;
+  display: block;
+  font-size: 15px;
+}
+.qa-chip {
+  font-size: 9px;
+  border: 1px solid #64748b;
+  padding: 2px 5px;
+  border-radius: 4px;
+  color: #fbbf24;
+  white-space: nowrap;
+}
+.qa-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 9px;
+}
+.qa-form label {
+  display: grid;
+  gap: 4px;
+  color: #94a3b8;
+  font-size: 10px;
+}
+#analysisMain input,
+#analysisMain select,
+#analysisMain button,
+.qa-controls button {
+  background: #1e293b;
+  border: 1px solid #475569;
+  border-radius: 5px;
+  padding: 9px;
+  color: #e2e8f0;
+  min-width: 0;
+  min-height: 38px;
+}
+#analysisMain input:focus,
+#analysisMain select:focus {
+  outline: 1px solid #fbbf24;
+}
+#analysisMain button {
+  cursor: pointer;
+  color: #fbbf24;
+}
+.qa-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0;
+}
+.qa-controls button {
+  font-size: 10px;
+  padding: 5px 8px;
+  min-height: 32px;
+}
+.qa-check {
+  display: grid;
+  grid-template-columns: 52px 1fr;
+  gap: 6px;
+  padding: 8px 0;
+  border-bottom: 1px solid #263246;
+}
+.qa-check span:first-child {
+  text-transform: uppercase;
+  font-size: 9px;
+  letter-spacing: 0.5px;
+}
+.qa-correlation {
+  overflow: auto;
+}
+.qa-correlation table {
+  min-width: 800px;
+}
+.qa-correlation td {
+  text-align: center;
+}
+.qa-near {
+  background: #33415580;
+}
+.qa-spark {
+  width: 100%;
+  height: 36px;
+}
+.qa-risk-output {
+  padding: 12px 0;
+  line-height: 1.8;
+}
+.qa-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+@media (min-width: 700px) {
+  .qa-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .qa-form {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+@media (max-width: 420px) {
+  #analysisMain h1 {
+    font-size: 19px;
+  }
+  .qa-table td,
+  .qa-table th {
+    padding: 7px 3px;
+  }
+  .qa-body {
+    padding: 0 10px 12px;
+  }
+}
+@media (max-width: 640px) {
+  .qa-header-row {
+    flex-wrap: wrap !important;
+    height: auto !important;
+    min-height: 56px;
+    padding: 10px 0;
+    gap: 8px !important;
+  }
+  .qa-tabs {
+    order: 4;
+    flex-basis: 100%;
+    justify-content: space-between;
+    min-width: 0;
+  }
+  .qa-tabs button {
+    padding: 8px !important;
+    font-size: 11px !important;
+  }
+  .qa-header-row > .flex-1 {
+    min-width: 0;
+  }
+  #analysisMain {
+    margin-top: 12px;
+  }
+}
