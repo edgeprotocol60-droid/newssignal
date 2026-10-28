@@ -45,3 +45,17 @@ test('a missing DXY chart calculates the six live FX legs with the oldest quote 
   };
   try{const r=await invoke('yahoo?sym=DX-Y.NYB'),j=await r.json();assert.equal(r.status,200);assert.equal(j.calculated,true);assert.equal(j.ts,1700000000000);assert.equal(j.series.length,2);assert.match(j.source,/six-pair basket/);assert.ok(j.price>0);}finally{globalThis.fetch=originalFetch;}
 });
+test('analysis routes validate parameters before requesting upstreams',async()=>{
+  globalThis.fetch=()=>{throw new Error('Unexpected fetch');};
+  try{for(const p of ['market?sym=invalid','fred?id=INVALID','flow?coin=BTC'])assert.equal((await invoke(p)).status,400);
+  const bad=await handler(new Request('https://example.com/api/hl',{method:'POST',body:JSON.stringify({type:'candleSnapshot',req:{coin:'BTC',interval:'1m',startTime:Date.now()-1000}})}));assert.equal(bad.status,400);
+  }finally{globalThis.fetch=originalFetch;}
+});
+test('driver batch returns partial results and source latency',async()=>{
+  globalThis.fetch=async url=>String(url).includes('fredgraph.csv')?new Response('DATE,VALUE\n2026-10-26,1.5\n2026-10-27,1.6'):new Response('blocked',{status:403});
+  try{const r=await invoke('drivers'),j=await r.json();assert.equal(r.status,200);assert.equal(j.sources.length,12);assert.equal(j.sources.filter(x=>x.ok).length,3);assert.equal(j.data.DFII10.price,1.6);assert.ok(j.sources.every(x=>Number.isFinite(x.ms)));assert.match(r.headers.get('netlify-cdn-cache-control'),/s-maxage=300/);}finally{globalThis.fetch=originalFetch;}
+});
+test('HIP-3 context lookup uses xyz dex and named universe index',async()=>{
+  globalThis.fetch=async (url,opt)=>{const b=JSON.parse(opt.body);if(b.type==='metaAndAssetCtxs'){assert.equal(b.dex,'xyz');return Response.json([{universe:[{name:'xyz:XYZ100'},{name:'xyz:GOLD'}]},[{markPx:'20000'},{markPx:'4000'}]]);}return Response.json([{fundingRate:'0.00001'}]);};
+  try{const j=await(await invoke('flow?coin=xyz%3AGOLD')).json();assert.equal(j.context.markPx,'4000');assert.equal(j.funding.length,1);}finally{globalThis.fetch=originalFetch;}
+});

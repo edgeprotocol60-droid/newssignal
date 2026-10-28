@@ -27,7 +27,7 @@ function parseFeed(xml, name) {
 const KEEP = ['USD', 'EUR', 'GBP', 'JPY', 'AUD', 'CAD', 'CHF', 'NZD', 'CNY'];
 const KEY = /ppi|producer price|pce|ism |retail sales|gdp|powell|fomc|federal funds|fed chair|adp|jolts|jobless|unemployment claims|non-farm|nonfarm|cpi/i;
 const YS = ['DX-Y.NYB', 'EURUSD=X', 'GBPUSD=X', 'USDJPY=X', 'AUDUSD=X'];
-const HL_TYPES = ['candleSnapshot', 'allMids', 'metaAndAssetCtxs'];
+const HL_TYPES = ['candleSnapshot', 'allMids', 'metaAndAssetCtxs', 'fundingHistory', 'l2Book'];
 const TFF = [/^lev_money_positions_long(_all)?$/i, /^lev_money_positions_short(_all)?$/i, /^asset_mgr_positions_long(_all)?$/i, /^asset_mgr_positions_short(_all)?$/i];
 const tff = (title, code, inv) => ({ title, ds: 'gpe5-46if', code, group: 'Leveraged Funds', group2: 'Asset Managers', f: TFF, inv });
 const COT = {
@@ -39,9 +39,12 @@ const COT = {
 };
 const num = (r, re) => { const k = Object.keys(r).find(k => re.test(k)); return k ? +r[k] : NaN; };
 async function api(path, u, req) {
+  if(req.method!=='GET'&&!(path==='/hl'&&req.method==='POST'))return {status:405,body:'{"error":"Method not allowed"}',ttl:0};
+  const extra = await analysisRoutes(path, u, req);
+  if (extra) return extra;
   if (path === '/hl' && req.method === 'POST') {   // fallback proxy for Hyperliquid prices
-    const b = await req.json();
-    if (!HL_TYPES.includes(b.type)) return { status: 400, body: 'bad type', ttl: 0 };
+    let b;try{b=await req.json();}catch{return {status:400,body:'{"error":"Invalid JSON"}',ttl:0};}
+    if (!validHL(b)) return { status: 400, body: 'bad type', ttl: 0 };
     const r = await fetch('https://api.hyperliquid.xyz/info', { signal: AbortSignal.timeout(5000), method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b) });
     return { status: r.status, body: await r.text(), ttl: 0 };
   }
@@ -62,13 +65,13 @@ async function api(path, u, req) {
         ttl = 60;
       } else if (path === '/yahoo') {
         const sym = u.searchParams.get('sym'), range = u.searchParams.get('range') || '1d', interval = u.searchParams.get('interval') || '5m';
-        if (!YS.includes(sym) || !['1d', '5d', '1mo', '6mo'].includes(range) || !['1m', '5m', '15m', '60m', '1d'].includes(interval)) return { status: 400, body: 'bad request', ttl: 0 };
+        if (!YS.includes(sym) || !['1d', '5d', '1mo', '6mo', '2y'].includes(range) || !['1m', '5m', '15m', '60m', '1d'].includes(interval)) return { status: 400, body: 'bad request', ttl: 0 };
         body = JSON.stringify(await marketQuote(sym, range, interval));
         ttl = 30;
       } else if (path === '/cot') {
         const out = {};
-        await Promise.all(Object.entries(COT).map(async ([sym, c]) => {
-          const r = await fetch(`https://publicreporting.cftc.gov/resource/${c.ds}.json?cftc_contract_market_code=${c.code}&$order=report_date_as_yyyy_mm_dd%20DESC&$limit=156`, {signal: AbortSignal.timeout(15000)});
+        await Promise.allSettled(Object.entries(COT).map(async ([sym, c]) => {
+          const r = await fetch(`https://publicreporting.cftc.gov/resource/${c.ds}.json?cftc_contract_market_code=${c.code}&$order=report_date_as_yyyy_mm_dd%20DESC&$limit=156`, {signal: AbortSignal.timeout(5000)});
           if (!r.ok) throw new Error(`CFTC ${sym} HTTP ${r.status}`);
           const rows = await r.json();
           if (!rows.length) throw new Error(`CFTC ${sym}: no rows for code ${c.code}`);
@@ -139,7 +142,7 @@ async function yahooChart(sym,range,interval,signal) {
     if(!r.ok) throw new Error('Yahoo HTTP '+r.status);
     const d=(await r.json()).chart?.result?.[0]; if(!d?.timestamp?.length) throw new Error('Empty Yahoo chart');
     const q=d.indicators.quote[0],m=d.meta;
-    const series=d.timestamp.map((t,i)=>({t:t*1000,o:q.open[i]??q.close[i],h:q.high[i]??q.close[i],l:q.low[i]??q.close[i],c:q.close[i]})).filter(x=>Number.isFinite(x.c)&&x.c>0);
+    const series=d.timestamp.map((t,i)=>({t:t*1000,o:q.open[i]??q.close[i],h:q.high[i]??q.close[i],l:q.low[i]??q.close[i],c:q.close[i],v:Number.isFinite(q.volume?.[i])?q.volume[i]:null})).filter(x=>Number.isFinite(x.c)&&x.c>0);
     if(!series.length) throw new Error('No valid candles');
     return {price:m.regularMarketPrice??series.at(-1).c,prevClose:m.chartPreviousClose??m.previousClose??series[0].c,open:series[0].o,high:Math.max(...series.map(x=>x.h)),low:Math.min(...series.map(x=>x.l)),volume:m.regularMarketVolume||0,series,ts:(m.regularMarketTime*1000)||series.at(-1).t,source:'Yahoo Finance · delayed/indicative',delayed:true};
   }));
@@ -199,4 +202,51 @@ async function calculatedDxy(range,interval) {
   const price=formula(parts.map(x=>x.price));
   if(!(price>0)) throw new Error('Invalid DXY basket');
   return {price,prevClose:formula(parts.map(x=>x.prevClose)),open:series[0]?.c??price,high:Math.max(price,...series.map(x=>x.c)),low:Math.min(price,...series.map(x=>x.c)),volume:0,series,ts:Math.min(...parts.map(x=>x.ts)),source:'DXY (calculated) · Yahoo six-pair basket · close-only',delayed:true,calculated:true,reference:!series.length};
+}
+
+function validHL(b) {
+  if(!b||!HL_TYPES.includes(b.type))return false;
+  if(b.type==='metaAndAssetCtxs')return b.dex==='xyz'&&Object.keys(b).every(k=>['type','dex'].includes(k));
+  if(b.type==='allMids')return (b.dex===undefined||b.dex==='xyz')&&Object.keys(b).every(k=>['type','dex'].includes(k));
+  if(!Object.keys(b).every(k=>(b.type==='candleSnapshot'?['type','req']:['type','coin','startTime','endTime']).includes(k)))return false;
+  const r=b.type==='candleSnapshot'?b.req:b;
+  if(b.type==='candleSnapshot'&&r&&!Object.keys(r).every(k=>['coin','interval','startTime','endTime'].includes(k)))return false;
+  if(!r||!['xyz:GOLD','xyz:XYZ100'].includes(r.coin))return false;
+  if(b.type==='l2Book')return Object.keys(b).every(k=>['type','coin'].includes(k));
+  return Number.isFinite(r.startTime)&&r.startTime>=Date.now()-2000*864e5&&r.startTime<=Date.now()&&
+    (r.endTime===undefined||(Number.isFinite(r.endTime)&&r.endTime>=r.startTime&&r.endTime<=Date.now()+6e4))&&
+    (b.type!=='candleSnapshot'||['1m','5m','15m','1h','4h','1d','1w'].includes(r.interval));
+}
+function driverSymbols(){return {'TNX':'^TNX','FVX':'^FVX','VIX':'^VIX','SPX':'^GSPC','WTI':'CL=F','COPPER':'HG=F','USDCNH':'CNH=X','USDZAR':'ZAR=X','DXY':'DX-Y.NYB'};}
+async function fredSeries(id,signal){
+  const r=await fetch('https://fred.stlouisfed.org/graph/fredgraph.csv?id='+id,{signal});if(!r.ok)throw new Error('FRED HTTP '+r.status);
+  const series=(await r.text()).trim().split('\n').slice(1).map(l=>{const [d,c]=l.trim().split(',');return {t:Date.parse(d+'T00:00:00Z'),c:c&&c!=='.'?Number(c):NaN};}).filter(x=>Number.isFinite(x.t)&&Number.isFinite(x.c)).slice(-500);
+  if(!series.length)throw new Error('FRED empty');return {series,price:series.at(-1).c,prevClose:series.at(-2)?.c,ts:series.at(-1).t,source:'FRED · daily observation',delayed:true};
+}
+async function analysisRoutes(path,u,req){
+  if(!['/drivers','/fred','/market','/flow','/source-health'].includes(path))return null;
+  if(req.method!=='GET')return {status:405,body:'{"error":"GET required"}',ttl:0};
+  const symbols=driverSymbols(),ids=['DFII10','T10YIE','T10Y2Y'];
+  if(path==='/fred'){
+    const id=u.searchParams.get('id');if(!ids.includes(id))return {status:400,body:'{"error":"Unknown series"}',ttl:0};
+    return {status:200,body:JSON.stringify(await fredSeries(id,AbortSignal.timeout(5000))),ttl:3600};
+  }
+  if(path==='/market'){
+    const sym=u.searchParams.get('sym');if(!Object.values(symbols).includes(sym)&&!YS.includes(sym))return {status:400,body:'{"error":"Unknown market"}',ttl:0};
+    const interval=u.searchParams.get('interval')||'1d',range=u.searchParams.get('range')||'6mo';
+    if(!['15m','60m','1d','1wk'].includes(interval)||!['5d','1mo','6mo','2y','5y'].includes(range))return {status:400,body:'{"error":"Invalid interval or range"}',ttl:0};
+    return {status:200,body:JSON.stringify(await yahooChart(sym,range,interval,AbortSignal.timeout(5000))),ttl:interval==='1d'||interval==='1wk'?1800:60};
+  }
+  if(path==='/flow'){
+    const coin=u.searchParams.get('coin');if(!['xyz:GOLD','xyz:XYZ100'].includes(coin))return {status:400,body:'{"error":"Unknown coin"}',ttl:0};
+    const tasks=[['context',{type:'metaAndAssetCtxs',dex:'xyz'}],['funding',{type:'fundingHistory',coin,startTime:Date.now()-864e5,endTime:Date.now()}]];
+    const out={checkedAt:Date.now(),source:'Hyperliquid REST · xyz HIP-3',sources:[]};
+    await Promise.allSettled(tasks.map(async([name,body])=>{const start=Date.now();try{const r=await fetch('https://api.hyperliquid.xyz/info',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal:AbortSignal.timeout(5000)});if(!r.ok)throw new Error('HTTP '+r.status);const j=await r.json();if(name==='context'){const i=j[0]?.universe?.findIndex(x=>x.name===coin||'xyz:'+x.name===coin);out.context=i>=0?j[1][i]:null;}else out.funding=j;out.sources.push({name,ok:true,ms:Date.now()-start});}catch(e){out.sources.push({name,ok:false,ms:Date.now()-start,error:'Source unavailable'});}}));
+    return {status:200,body:JSON.stringify(out),ttl:60};
+  }
+  const out={checkedAt:Date.now(),data:{},sources:[]};
+  const jobs=[...Object.entries(symbols).map(([name,sym])=>[name,signal=>yahooChart(sym,'6mo','1d',signal)]),...ids.map(id=>[id,signal=>fredSeries(id,signal)])];
+  if(path==='/source-health')jobs.push(['Hyperliquid',async signal=>{const r=await fetch('https://api.hyperliquid.xyz/info',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type:'metaAndAssetCtxs',dex:'xyz'}),signal});if(!r.ok)throw new Error('HTTP '+r.status);await r.json();return {source:'Hyperliquid · xyz'};}]);
+  await Promise.allSettled(jobs.map(async([name,fn])=>{const at=Date.now();try{out.data[name]=await fn(AbortSignal.timeout(5000));out.sources.push({name,ok:true,ms:Date.now()-at});}catch(e){out.sources.push({name,ok:false,ms:Date.now()-at,error:'Upstream unavailable or timed out'});}}));
+  return {status:200,body:JSON.stringify(out),ttl:300};
 }

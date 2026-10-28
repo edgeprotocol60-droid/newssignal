@@ -48,7 +48,7 @@
   // ---------- scoring ----------
   function techScore(sym) {
     const t = state.trends && state.trends[sym], q = state.quotes[sym];
-    if (!t || !q) return null;
+    if (!t || !t.live || !q) return null;
     const day = (q.price - q.prevClose) / q.prevClose * 100;
     const today = clamp(t.daily.score * 0.7 + clamp(day * 40, -60, 60) * 0.3, -100, 100);
     const swing = clamp(t.weekly.score * 0.6 + t.daily.score * 0.4, -100, 100);
@@ -164,7 +164,9 @@
     cotMain.insertAdjacentHTML('afterend', '<main id="aiMain" class="hidden max-w-[1600px] mx-auto p-4"><div id="aiBody" class="space-y-4"></div></main>');
     const off = () => { $('aiMain').classList.add('hidden'); $('tabAI').className = 'text-[12px] font-bold px-3 py-1 rounded-md text-slate-400'; };
     $('tabDash').addEventListener('click', off); cotTab.addEventListener('click', off);
+    $('tabAnalysis')?.addEventListener('click', off);
     $('tabAI').addEventListener('click', () => {
+      showTab('ai');
       $('dashMain').classList.add('hidden'); cotMain.classList.add('hidden'); $('aiMain').classList.remove('hidden');
       $('tabAI').className = 'text-[12px] font-bold px-3 py-1 rounded-md bg-amber-500 text-slate-950';
       if (!S.at || Date.now() - S.at > 3e5) load(); else render();
